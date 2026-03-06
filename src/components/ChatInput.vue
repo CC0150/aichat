@@ -21,7 +21,7 @@ const isSending = ref(false)
 const textareaRef = ref(null)
 const isModelMenuOpen = ref(false)
 
-// 附件解析相关（PDF / Word）
+// 附件解析相关（PDF / Word / 文本类）
 const fileInputRef = ref(null)
 // 单个附件：{ id, name, text, type: 'pdf' | 'word' }
 const attachments = ref([])
@@ -46,7 +46,7 @@ function triggerFileSelect() {
 }
 
 /**
- * 处理附件选择变更事件：解析 PDF / Word 文本并填充到 attachments
+ * 处理附件选择变更事件：解析 PDF / Word / 文本类文件，并填充到 attachments
  */
 async function handleFileChange(event) {
   const files = Array.from(event.target.files || [])
@@ -90,6 +90,24 @@ async function handleFileChange(event) {
             name: file.name,
             text,
             type: 'word',
+          })
+        }
+      } else if (
+        type === 'text/plain' ||
+        name.endsWith('.txt') ||
+        type === 'application/json' ||
+        name.endsWith('.json') ||
+        type === 'text/csv' ||
+        type === 'application/vnd.ms-excel' ||
+        name.endsWith('.csv')
+      ) {
+        const text = await file.text()
+        if (text && text.trim()) {
+          attachments.value.push({
+            id: `${Date.now()}-${file.name}-${Math.random().toString(36).slice(2, 8)}`,
+            name: file.name,
+            text,
+            type: 'text',
           })
         }
       } else if (
@@ -436,9 +454,9 @@ defineExpose({
             <Icon icon="lucide:link" class="h-5 w-5" />
             <span class="text-sm">添加附件</span>
           </button>
-          <!-- 隐藏的文件选择框：支持 PDF 与 docx -->
+          <!-- 隐藏的文件选择框：支持 PDF / docx / txt / json / csv -->
           <input ref="fileInputRef" type="file" class="hidden" multiple
-            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            accept=".pdf,.docx,.txt,.json,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,application/json,text/csv,application/vnd.ms-excel"
             @change="handleFileChange" />
           <button type="button"
             class="flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-text-muted hover:bg-surface-elevated hover:text-text-primary"

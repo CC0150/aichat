@@ -79,9 +79,13 @@ function closeDeleteModal() {
   <div class="flex h-full flex-col">
     <!-- 顶部：Logo + 折叠按钮 -->
     <div class="flex min-h-[56px] items-center gap-2 border-b border-border px-3">
-      <button type="button"
+      <button
+        type="button"
         class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-text-secondary hover:bg-surface-elevated hover:text-text-primary"
-        aria-label="切换侧边栏" @click="appStore.toggleSidebar">
+        aria-label="切换侧边栏"
+        title="展开 / 收起侧边栏"
+        @click="appStore.toggleSidebar"
+      >
         <Icon icon="lucide:menu" class="h-5 w-5" />
       </button>
       <router-link to="/" class="flex min-w-0 flex-1 items-center gap-2 overflow-hidden text-text-primary">
@@ -91,9 +95,13 @@ function closeDeleteModal() {
 
     <!-- 新建对话 -->
     <div class="border-b border-border p-2">
-      <button type="button"
+      <button
+        type="button"
         class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-text-primary hover:bg-surface-elevated"
-        @click="goNewChat">
+        aria-label="新建对话"
+        title="新建一个空白对话"
+        @click="goNewChat"
+      >
         <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-elevated">
           <Icon icon="lucide:pen-square" class="h-5 w-5" />
         </span>
@@ -107,8 +115,12 @@ function closeDeleteModal() {
         <li v-for="item in chatStore.history" :key="item.id" class="group">
           <div class="flex items-center gap-1 rounded-lg px-2 py-2"
             :class="chatStore.currentChatId === item.id ? 'bg-surface-elevated text-primary' : 'text-text-secondary hover:bg-surface-elevated hover:text-text-primary'">
-            <button type="button" class="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1 text-left"
-              @click="goChat(item.id)">
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1 text-left"
+              :title="item.title"
+              @click="goChat(item.id)"
+            >
               <Icon icon="lucide:message-square" class="h-5 w-5 shrink-0" />
               <span class="min-w-0 truncate">{{ item.title }}</span>
             </button>

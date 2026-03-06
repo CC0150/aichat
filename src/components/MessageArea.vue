@@ -105,7 +105,8 @@ function isNearBottom(el, thresholdPx = AUTO_SCROLL_THRESHOLD_PX) {
  * - 用户上滑查看历史：暂停自动滚动
  */
 function onScrollerScroll(e) {
-  const el = e?.target
+  // vue-virtual-scroller 的 scroll 事件有时会包一层 { event }
+  const el = e?.target || e?.event?.target
   shouldAutoScroll.value = isNearBottom(el)
 }
 
@@ -310,10 +311,10 @@ watch(
         :items="virtualMessages"
         :min-item-size="50"
         key-field="id"
-        @scroll.passive="onScrollerScroll"
       >
-        <template #default="{ item, index }">
-          <DynamicScrollerItem :item="item" :index="index">
+        <!-- vue-virtual-scroller 会在插槽参数里传入 active，必须转给 DynamicScrollerItem -->
+        <template #default="{ item, index, active }">
+          <DynamicScrollerItem :item="item" :index="index" :active="active">
             <div class="mx-auto max-w-3xl group/message w-full mb-4"
               :class="item.role === 'user' ? 'flex justify-end' : ''">
               <!-- 用户消息 -->
