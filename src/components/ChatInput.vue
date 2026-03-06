@@ -448,9 +448,13 @@ defineExpose({
       </div>
       <div class="flex items-center justify-between gap-2">
         <div class="flex items-center gap-1">
-          <button type="button"
+          <button
+            type="button"
             class="flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-text-muted hover:bg-surface-elevated hover:text-text-primary"
-            aria-label="添加附件" @click="triggerFileSelect">
+            aria-label="添加附件"
+            title="添加附件（支持 PDF、Word、TXT、JSON、CSV）"
+            @click="triggerFileSelect"
+          >
             <Icon icon="lucide:link" class="h-5 w-5" />
             <span class="text-sm">添加附件</span>
           </button>
@@ -458,9 +462,13 @@ defineExpose({
           <input ref="fileInputRef" type="file" class="hidden" multiple
             accept=".pdf,.docx,.txt,.json,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,application/json,text/csv,application/vnd.ms-excel"
             @change="handleFileChange" />
-          <button type="button"
+          <button
+            type="button"
             class="flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-text-muted hover:bg-surface-elevated hover:text-text-primary"
-            aria-label="上传图片" @click="triggerImageSelect">
+            aria-label="上传图片"
+            title="上传图片（支持多张）"
+            @click="triggerImageSelect"
+          >
             <Icon icon="lucide:image" class="h-5 w-5" />
             <span class="text-sm">上传图片</span>
           </button>
@@ -470,9 +478,12 @@ defineExpose({
         <div class="flex items-center gap-1">
           <!-- 模型切换按钮：显示当前模型名称 -->
           <div class="relative">
-            <button type="button"
+            <button
+              type="button"
               class="flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-text-muted hover:bg-surface-elevated hover:text-text-primary"
-              @click="isModelMenuOpen = !isModelMenuOpen">
+              :title="`当前模型：${appStore.currentModel.label}`"
+              @click="isModelMenuOpen = !isModelMenuOpen"
+            >
               <span>{{ appStore.currentModel.shortLabel }}</span>
               <Icon icon="lucide:chevron-down" class="h-4 w-4" />
             </button>
@@ -488,9 +499,14 @@ defineExpose({
               </div>
             </transition>
           </div>
-          <button type="button"
+          <button
+            type="button"
             class="rounded-lg p-1.5 text-primary hover:bg-primary-muted disabled:opacity-50 disabled:pointer-events-none"
-            aria-label="发送" @click="send" :disabled="isSending">
+            aria-label="发送"
+            title="发送（Enter 发送，Shift+Enter 换行）"
+            @click="send"
+            :disabled="isSending"
+          >
             <Icon icon="lucide:send" class="h-5 w-5" />
           </button>
         </div>
