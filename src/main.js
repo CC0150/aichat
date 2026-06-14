@@ -1,6 +1,8 @@
 import { createApp } from 'vue'
 import VueVirtualScroller from 'vue3-virtual-scroller'
 import 'vue3-virtual-scroller/dist/vue3-virtual-scroller.css'
+import FloatingVue from 'floating-vue'
+import 'floating-vue/dist/style.css'
 import { createPinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import App from './App.vue'
@@ -27,5 +29,14 @@ try {
 const app = createApp(App)
 app.use(pinia)
 app.use(router)
+app.use(FloatingVue, {
+  themes: {
+    tooltip: {
+      delay: { show: 200, hide: 0 },
+      distance: 8,
+    },
+  },
+  distance: 8,
+})
 app.use(VueVirtualScroller)
 app.mount('#app')

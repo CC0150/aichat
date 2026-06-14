@@ -11,10 +11,9 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "zhipuai-sdk-nodejs-v4": "^0.1.12"
+    "openai": "^6.27.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
   }
 }
-

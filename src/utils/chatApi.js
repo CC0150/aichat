@@ -1,4 +1,4 @@
-const CHAT_API_URL = "/api/chat";
+const CHAT_API_URL = "http://localhost:8787/api/chat";
 
 /**
  * 流式请求后端 Chat 补全
@@ -7,10 +7,11 @@ const CHAT_API_URL = "/api/chat";
  *   messages: Array<{ role: 'user' | 'assistant'; content: string }>
  *   onChunk: (content: string) => void
  *   onError?: (message: string) => void
+ *   signal?: AbortSignal
  * }} options
  * @returns {Promise<void>}
  */
-export async function requestChatStream({ model, messages, onChunk, onError }) {
+export async function requestChatStream({ model, messages, onChunk, onError, signal }) {
   const body = JSON.stringify({
     model,
     messages,
@@ -21,8 +22,10 @@ export async function requestChatStream({ model, messages, onChunk, onError }) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "Accept": "text/event-stream; charset=utf-8",
     },
     body,
+    signal,
   });
 
   if (!response.ok) {
@@ -40,36 +43,48 @@ export async function requestChatStream({ model, messages, onChunk, onError }) {
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  let buffer = "";
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
-    const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split("\n");
+    const chunkText = decoder.decode(value, { stream: true });
+    
+    buffer += chunkText;
+    
 
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const data = line.slice(6);
-      if (data === "[DONE]") continue;
+    while (true) {
+      const nl = buffer.indexOf("\n");
+      if (nl === -1) break;
+      const rawLine = buffer.slice(0, nl);
+      buffer = buffer.slice(nl + 1);
+
+      const line = rawLine.trim();
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trimStart(); // "data: " 后面的内容
+
+      if (data === "[DONE]") {
+        try {
+          await reader.cancel();
+        } catch (_) {}
+        return;
+      }
 
       try {
-        // 尝试解析 JSON
         const parsed = JSON.parse(data);
-        // 检查响应格式
-        if (
-          parsed.choices &&
-          parsed.choices[0] &&
-          parsed.choices[0].delta &&
-          parsed.choices[0].delta.content
-        ) {
-          // 智谱 API 格式
-          const content = parsed.choices[0].delta.content;
-          if (content) onChunk(content);
-        } else if (parsed.content) {
-          // 后端自定义格式
-          const content = parsed.content;
-          if (content) onChunk(content);
+        // 后端错误：空消息、API 失败等会返回 { error: "..." }
+        if (parsed?.error) {
+          onError?.(String(parsed.error));
+          return;
+        }
+        // 双重兼容：优先 parsed.content（后端标准化格式），其次 parsed.choices[0].delta.content
+        const content =
+          parsed.content ??
+          parsed.choices?.[0]?.delta?.content ??
+          null;
+        if (content != null && content !== "") {
+          onChunk(String(content));
         }
       } catch (e) {
         // 忽略 JSON 解析错误，继续处理下一行

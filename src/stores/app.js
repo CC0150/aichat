@@ -64,7 +64,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   // 当前选中的模型 id（与 ChatInput 模型切换、MessageArea 重新生成共用，避免切换模型后仍用错 key/模型）
-  const currentModelId = ref(modelOptions[0]?.id ?? 'glm46v')
+  const currentModelId = ref(modelOptions[0]?.id ?? 'deepseek-chat')
   const currentModel = computed(() => getModelById(currentModelId.value))
 
   /**

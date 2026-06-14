@@ -55,3 +55,56 @@ body {
   -ms-overflow-style: none; /* IE 和旧 Edge */
   scrollbar-width: none;    /* Firefox */
 }
+
+/* floating-vue tooltip 主题覆盖 - 适配深浅色模式 */
+.v-popper--theme-tooltip .v-popper__inner {
+  @apply rounded-lg px-2.5 py-1.5 text-xs shadow-lg bg-surface-elevated text-text-primary border border-border;
+}
+
+.v-popper--theme-tooltip .v-popper__arrow-inner {
+  border-color: var(--color-surface-elevated) !important;
+}
+
+.v-popper--theme-tooltip .v-popper__arrow-outer {
+  border-color: var(--color-border) !important;
+}
+
+/* 附件标签 TransitionGroup：淡入并向左滑入 */
+.attachment-slide-enter-active,
+.attachment-slide-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.attachment-slide-enter-from {
+  opacity: 0;
+  transform: translateX(12px);
+}
+
+.attachment-slide-leave-to {
+  opacity: 0;
+  transform: translateX(-8px);
+}
+
+.attachment-slide-move {
+  transition: transform 0.2s ease;
+}
+
+/* 图片缩略图 TransitionGroup：淡入并向左滑入 */
+.image-slide-enter-active,
+.image-slide-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.image-slide-enter-from {
+  opacity: 0;
+  transform: translateX(12px);
+}
+
+.image-slide-leave-to {
+  opacity: 0;
+  transform: translateX(-8px);
+}
+
+.image-slide-move {
+  transition: transform 0.2s ease;
+}

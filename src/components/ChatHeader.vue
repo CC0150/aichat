@@ -39,6 +39,7 @@ function handleRenameClick() {
         type="button"
         class="shrink-0 rounded p-1 text-text-muted hover:bg-surface-elevated hover:text-text-primary"
         aria-label="重命名会话"
+        v-tooltip="'重命名会话'"
         @click="handleRenameClick"
       >
         <Icon icon="lucide:pencil" class="h-4 w-4" />
@@ -49,13 +50,13 @@ function handleRenameClick() {
         type="button"
         class="flex h-9 w-9 items-center justify-center rounded-lg text-text-secondary hover:bg-surface-elevated hover:text-text-primary"
         :aria-label="appStore.isDark ? '切换为日间模式' : '切换为夜间模式'"
-        :title="appStore.isDark ? '切换为日间模式' : '切换为夜间模式'"
+        v-tooltip="appStore.isDark ? '切换为日间模式' : '切换为夜间模式'"
         @click="appStore.toggleTheme()"
       >
         <Icon v-if="appStore.isDark" icon="lucide:sun" class="h-5 w-5" />
         <Icon v-else icon="lucide:moon" class="h-5 w-5" />
       </button>
-      <span class="hidden text-sm font-medium text-text-secondary sm:inline">PRO</span>
+      <span class="hidden text-sm font-medium text-text-secondary sm:inline">下雨天</span>
       <button type="button"
         class="flex h-8 w-8 items-center justify-center rounded-full border-2 border-primary bg-surface-elevated text-sm font-medium text-text-primary"
         aria-label="用户">

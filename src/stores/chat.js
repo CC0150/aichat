@@ -19,6 +19,13 @@ export const useChatStore = defineStore(
     ]);
     const messagesByChatId = ref({}); // { [id]: [{ role, content }] }
 
+    function getContentText(content) {
+      if (content == null) return ""
+      if (typeof content === "string") return content
+      if (typeof content === "object" && "text" in content) return content.text != null ? String(content.text) : ""
+      return ""
+    }
+
     /**
      * 根据用户首条消息内容生成更自然的会话标题
      * - 去掉常见的口头开头（如“帮我”“请帮我”“我想要”）
@@ -117,7 +124,7 @@ export const useChatStore = defineStore(
     function addMessage(role, content) {
       let chatId = currentChatId.value;
       if (!chatId) {
-        chatId = addToHistory({ title: typeof content === "string" ? content : "" });
+        chatId = addToHistory({ title: getContentText(content) });
         currentChatId.value = chatId;
       }
       if (!messagesByChatId.value[chatId]) messagesByChatId.value[chatId] = [];
@@ -125,10 +132,7 @@ export const useChatStore = defineStore(
       // 更新该会话标题（仅当第一条为用户消息时）
       const list = history.value.find((c) => c.id === chatId);
       if (list && (list.title === "新对话" || !list.title)) {
-        list.title =
-          typeof content === "string"
-            ? buildTitleFromContent(content)
-            : "新对话";
+        list.title = buildTitleFromContent(getContentText(content)) || "新对话";
         list.updatedAt = new Date().toISOString();
       }
     }

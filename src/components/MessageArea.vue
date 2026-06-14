@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
@@ -33,8 +33,16 @@ const editingContent = ref('')
 const isRenameModalOpen = ref(false)
 const newChatTitle = ref('')
 
-// 加载状态
+// 仅用于“重新回答”按钮的 loading 状态
 const isGenerating = ref(false)
+
+function isAbortError(err) {
+  return (
+    err?.name === 'AbortError' ||
+    err?.code === 'ABORT_ERR' ||
+    /aborted|abort/i.test(String(err?.message || ''))
+  )
+}
 
 // 删除模态框相关
 const isDeleteModalOpen = ref(false)
@@ -79,17 +87,35 @@ function onSuggest(s) {
   emit('sendMessage', s.label)
 }
 
-/**
- * 使用虚拟列表提供的 scrollToItem，将视图滚动到最新一条消息
- */
+let scrollRafId = null;
+
+/** 执行滚动到底部的 DOM 操作（不检查 shouldAutoScroll） */
+function scrollToBottomForce() {
+  if (scrollRafId) cancelAnimationFrame(scrollRafId)
+  scrollRafId = requestAnimationFrame(() => {
+    const scroller = scrollerRef.value
+    if (scroller?.$el) {
+      const el = scroller.$el
+      el.scrollTop = el.scrollHeight
+    }
+  })
+}
+
+/** 仅在用户位于底部附近时滚动，用于流式输出时的自动跟随 */
 function scrollToBottom() {
   nextTick(() => {
     if (!shouldAutoScroll.value) return
-    const scroller = scrollerRef.value
-    // DynamicScroller 提供 scrollToItem 方法，这里滚动到最后一条消息
-    if (scroller && typeof scroller.scrollToItem === 'function') {
-      scroller.scrollToItem(virtualMessages.value.length - 1)
-    }
+    scrollToBottomForce()
+  })
+}
+
+/** 进入对话时滚动到底部：刷新页面或切换对话后调用 */
+function scrollToBottomOnEnter() {
+  shouldAutoScroll.value = true
+  nextTick(() => {
+    scrollToBottomForce()
+    // 虚拟列表可能稍晚才完成测量，再补一帧
+    requestAnimationFrame(() => scrollToBottomForce())
   })
 }
 
@@ -110,13 +136,63 @@ function onScrollerScroll(e) {
   shouldAutoScroll.value = isNearBottom(el)
 }
 
+// 绑定真实 DOM 的 scroll 事件（DynamicScroller 不 emit `scroll`，用 @scroll 会触发 Vue 告警）
+let boundScrollEl = null
+function bindScrollerDomScroll() {
+  const el = scrollerRef.value?.$el
+  if (!el) return
+  if (boundScrollEl && boundScrollEl !== el) {
+    boundScrollEl.removeEventListener('scroll', onScrollerScroll)
+    boundScrollEl = null
+  }
+  if (!boundScrollEl) {
+    boundScrollEl = el
+    boundScrollEl.addEventListener('scroll', onScrollerScroll, { passive: true })
+  }
+}
+
 /**
  * 将指定文本复制到剪贴板
  */
 async function copyToClipboard(text) {
   try {
     await navigator.clipboard.writeText(text)
-  } catch (_) { }
+  } catch (_) {}
+}
+
+/**
+ * 从消息中提取用户输入的纯文本
+ */
+function getUserText(message) {
+  const c = message?.content
+  if (typeof c === 'string') return c
+  if (c && typeof c === 'object') {
+    if (typeof c.text === 'string') return c.text
+  }
+  return ''
+}
+
+/**
+ * 从消息中提取关联的图片列表（用于预览）
+ */
+function getUserImages(message) {
+  const c = message?.content
+  if (c && Array.isArray(c.images)) return c.images
+  return []
+}
+
+// 图片预览
+const isImagePreviewOpen = ref(false)
+const previewImage = ref(null)
+
+function openImagePreview(img) {
+  previewImage.value = img
+  isImagePreviewOpen.value = true
+}
+
+function closeImagePreview() {
+  isImagePreviewOpen.value = false
+  previewImage.value = null
 }
 
 /**
@@ -178,6 +254,7 @@ async function regenerate(index) {
   const userMessage = chatStore.currentMessages[userMessageIndex]
   if (!userMessage || userMessage.role !== 'user') return
 
+  const controller = new AbortController()
   try {
       isGenerating.value = true
       const modelConfig = appStore.currentModel
@@ -186,11 +263,18 @@ async function regenerate(index) {
 
       await requestChatStream({
         model: modelConfig.model,
-        messages: [{ role: 'user', content: userMessage.content }],
+        messages: [{
+          role: 'user',
+          content: typeof userMessage.content === 'string'
+            ? userMessage.content
+            : (userMessage.content?.text ?? ''),
+        }],
         onChunk: (content) => chatStore.appendToLastMessage(content),
         onError: (msg) => chatStore.setLastAssistantMessage(`错误：${msg}`),
+        signal: controller.signal,
       })
     } catch (error) {
+      if (controller.signal.aborted || isAbortError(error)) return
       console.error('API 调用失败:', error)
       chatStore.setLastAssistantMessage(`错误：${error.message}`)
     } finally {
@@ -268,15 +352,43 @@ watch(
   () => scrollToBottom(),
   { flush: 'post' }
 )
+// 只监听最后一条消息（极大地提升流式输出时的性能）
 watch(
-  () => virtualMessages.value.map((m) => m.content).join(''),
+  () => {
+    const msgs = virtualMessages.value;
+    return msgs.length ? msgs[msgs.length - 1].content : '';
+  },
   () => scrollToBottom(),
   { flush: 'post' }
 )
+
+// 刷新页面或切换对话时，始终滚动到底部
+onMounted(() => {
+  if (chatStore.currentMessages.length) {
+    scrollToBottomOnEnter()
+  }
+  nextTick(() => bindScrollerDomScroll())
+})
+watch(
+  () => chatStore.currentChatId,
+  () => {
+    if (chatStore.currentMessages.length) {
+      scrollToBottomOnEnter()
+    }
+    nextTick(() => bindScrollerDomScroll())
+  }
+)
+
+onUnmounted(() => {
+  if (boundScrollEl) {
+    boundScrollEl.removeEventListener('scroll', onScrollerScroll)
+    boundScrollEl = null
+  }
+})
 </script>
 
 <template>
-  <div class="flex flex-1 flex-col overflow-hidden">
+  <div class="relative flex flex-1 flex-col overflow-hidden">
     <template v-if="isEmpty">
       <div class="flex flex-1 flex-col items-center justify-center px-4 py-8">
         <div class="flex flex-col items-center gap-5 text-center">
@@ -311,6 +423,7 @@ watch(
         :items="virtualMessages"
         :min-item-size="50"
         key-field="id"
+        style="overflow-anchor: none;"
       >
         <!-- vue-virtual-scroller 会在插槽参数里传入 active，必须转给 DynamicScrollerItem -->
         <template #default="{ item, index, active }">
@@ -323,23 +436,55 @@ watch(
                 <div
                   class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100">
                   <button type="button"
-                    class="rounded p-1.5 text-text-muted hover:bg-surface-elevated hover:text-text-primary" title="复制"
-                    @click="copyToClipboard(item.content)">
+                    class="rounded p-1.5 text-text-muted hover:bg-surface-elevated hover:text-text-primary"
+                    v-tooltip="'复制'"
+                    @click="copyToClipboard(getUserText(item))">
                     <Icon icon="lucide:copy" class="h-4 w-4" />
                   </button>
                   <button type="button"
-                    class="rounded p-1.5 text-text-muted hover:bg-surface-elevated hover:text-text-primary" title="编辑提示词"
-                    @click="openEditModal(index, item.content)">
+                    class="rounded p-1.5 text-text-muted hover:bg-surface-elevated hover:text-text-primary"
+                    v-tooltip="'编辑提示词'"
+                    @click="openEditModal(index, getUserText(item))">
                     <Icon icon="lucide:edit-2" class="h-4 w-4" />
                   </button>
                   <button type="button" class="rounded p-1.5 text-text-muted hover:bg-red-500/20 hover:text-red-400"
-                    title="删除此轮对话" @click="deleteTurnFromUser(index)">
+                    v-tooltip="'删除此轮对话'" @click="deleteTurnFromUser(index)">
                     <Icon icon="lucide:trash-2" class="h-4 w-4" />
                   </button>
                 </div>
                 <!-- 用户消息气泡 -->
-                <div class="rounded-2xl bg-primary text-white px-4 py-2.5">
-                  <p class="whitespace-pre-wrap break-words text-sm">{{ item.content }}</p>
+                <div class="rounded-2xl bg-primary text-white px-4 py-2.5 max-w-full">
+                  <!-- 图片预览 -->
+                  <div
+                    v-if="getUserImages(item).length"
+                    class="mb-2 flex flex-wrap gap-2"
+                  >
+                    <div
+                      v-for="img in getUserImages(item)"
+                      :key="img.id || img.url"
+                      class="relative h-20 w-28 overflow-hidden rounded-md border border-white/20 bg-black/10 cursor-zoom-in"
+                      @click="openImagePreview(img)"
+                    >
+                      <img
+                        :src="img.url"
+                        :alt="img.name || '已上传图片'"
+                        class="h-full w-full object-cover"
+                      />
+                    </div>
+                  </div>
+                  <!-- 文本内容 -->
+                  <p
+                    v-if="getUserText(item)"
+                    class="whitespace-pre-wrap break-words text-sm"
+                  >
+                    {{ getUserText(item) }}
+                  </p>
+                  <p
+                    v-else-if="getUserImages(item).length"
+                    class="text-xs text-white/80"
+                  >
+                    已发送 {{ getUserImages(item).length }} 张图片
+                  </p>
                 </div>
               </div>
 
@@ -366,19 +511,20 @@ watch(
                 <!-- AI 消息：底部操作栏 -->
                 <div class="flex justify-end gap-0.5 mt-1 opacity-0 transition-opacity group-hover/message:opacity-100">
                   <button type="button"
-                    class="rounded p-1.5 text-text-muted hover:bg-surface-elevated hover:text-text-primary" title="复制"
+                    class="rounded p-1.5 text-text-muted hover:bg-surface-elevated hover:text-text-primary"
+                    v-tooltip="'复制'"
                     @click="copyToClipboard(item.content)">
                     <Icon icon="lucide:copy" class="h-4 w-4" />
                   </button>
                   <button type="button"
                     class="rounded p-1.5 text-text-muted hover:bg-surface-elevated hover:text-text-primary disabled:opacity-50 disabled:pointer-events-none"
-                    title="重新回答" @click="regenerate(index)" :disabled="isGenerating">
+                    v-tooltip="'重新回答'" @click="regenerate(index)" :disabled="isGenerating">
                     <Icon v-if="!isGenerating" icon="lucide:refresh-cw" class="h-4 w-4" />
                     <span v-else
                       class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
                   </button>
                   <button type="button" class="rounded p-1.5 text-text-muted hover:bg-red-500/20 hover:text-red-400"
-                    title="删除此轮对话" @click="deleteTurnFromAssistant(index)">
+                    v-tooltip="'删除此轮对话'" @click="deleteTurnFromAssistant(index)">
                     <Icon icon="lucide:trash-2" class="h-4 w-4" />
                   </button>
                 </div>
@@ -387,6 +533,20 @@ watch(
           </DynamicScrollerItem>
         </template>
       </DynamicScroller>
+
+      <!-- 一键滚动到底部：用户上滑查看历史时显示 -->
+      <Transition name="fade">
+        <button
+          v-if="!isEmpty && !shouldAutoScroll"
+          type="button"
+          class="absolute bottom-6 right-8 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface-elevated text-text-secondary shadow-lg transition-colors hover:bg-surface-input hover:text-text-primary"
+          aria-label="滚动到最新"
+          v-tooltip="'滚动到最新'"
+          @click="scrollToBottomOnEnter"
+        >
+          <Icon icon="lucide:chevron-down" class="h-5 w-5" />
+        </button>
+      </Transition>
     </template>
 
     <!-- 编辑消息模态框 -->
@@ -405,9 +565,42 @@ watch(
     </Modal>
 
     <!-- 删除对话模态框 -->
-    <Modal :show="isDeleteModalOpen" title="要删除这一轮对话吗？" confirm-text="删除" cancel-text="取消" confirm-variant="danger"
-      @close="closeDeleteModal" @confirm="confirmDelete">
+    <Modal
+      :show="isDeleteModalOpen"
+      title="要删除这一轮对话吗？"
+      confirm-text="删除"
+      cancel-text="取消"
+      confirm-variant="danger"
+      @close="closeDeleteModal"
+      @confirm="confirmDelete"
+    >
       <p class="text-text-secondary">此操作将删除这一轮对话的提示和回答。</p>
     </Modal>
+
+    <!-- 图片全屏预览层 -->
+    <div
+      v-if="isImagePreviewOpen && previewImage"
+      class="fixed inset-0 z-40 flex items-center justify-center bg-black/60"
+    >
+      <!-- 点击遮罩关闭 -->
+      <div class="absolute inset-0" @click="closeImagePreview"></div>
+
+      <!-- 关闭按钮 -->
+      <button
+        type="button"
+        class="absolute right-6 top-6 rounded-full bg-black/60 p-2 text-white hover:bg-black/60"
+        aria-label="关闭预览"
+        @click="closeImagePreview"
+      >
+        <Icon icon="lucide:x" class="h-6 w-6" />
+      </button>
+
+      <!-- 大图 -->
+      <img
+        :src="previewImage.url"
+        :alt="previewImage.name || '图片预览'"
+        class="relative max-h-[80vh] max-w-[80vw] rounded-lg shadow-2xl"
+      />
+    </div>
   </div>
 </template>
