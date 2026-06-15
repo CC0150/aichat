@@ -510,7 +510,7 @@ defineExpose({ sendMessage, continueGeneration });
       <!-- Textarea -->
       <textarea ref="textareaRef" v-model="input"
         class="min-h-[50px] w-full resize-none bg-transparent py-1 text-[15px] leading-relaxed text-text-primary placeholder:text-text-muted focus:outline-none transition-[height] duration-150 ease-out"
-        rows="1" placeholder="问问 AIChat" @keydown.enter="onEnterKey" @input="onInput" @paste="handlePaste" />
+        rows="1" placeholder="向 Intervy 提问" @keydown.enter="onEnterKey" @input="onInput" @paste="handlePaste" />
 
       <!-- Images -->
       <div v-if="images.length" class="flex flex-col gap-2">

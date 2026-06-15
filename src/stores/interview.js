@@ -12,6 +12,9 @@ export const useInterviewStore = defineStore(
     const phase = ref("idle")                // idle | answering | scoring | feedback | finished
     const answers = ref({})                  // { [questionId]: userAnswer }
     const scores = ref({})                   // { [questionId]: { score, correctness, completeness, clarity, feedback, improvedAnswer } }
+    const conversations = ref({})            // { [questionId]: [{ role:'user'|'assistant', content }] } 多轮对话记录
+    const isCustomMode = ref(false)          // 是否为自定义题目模式（文件出题 / AI 生成）
+    const customSource = ref('')             // 自定义题目的来源描述（文件名等）
     const startedAt = ref(null)              // 面试开始时间
 
     // ===== 历史记录 =====
@@ -20,6 +23,11 @@ export const useInterviewStore = defineStore(
     // ===== 计算属性 =====
     const currentQuestion = computed(() =>
       questions.value[currentIndex.value] || null
+    )
+
+    /** 当前题目的多轮对话历史 */
+    const currentConversation = computed(() =>
+      conversations.value[currentQuestion.value?.id] || []
     )
 
     const progress = computed(() => ({
@@ -121,18 +129,60 @@ export const useInterviewStore = defineStore(
       currentIndex.value = 0
       answers.value = {}
       scores.value = {}
+      conversations.value = {}
+      isCustomMode.value = false
+      customSource.value = ''
       phase.value = "answering"
       startedAt.value = new Date().toISOString()
       return true
     }
 
-    /** 提交答案，进入评分阶段 */
-    function submitAnswer(questionId, answer) {
+    /** 加载自定义题目（文件出题 / AI 生成），直接进入答题状态 */
+    function loadCustomQuestions(questionsList, source = '') {
+      if (!Array.isArray(questionsList) || questionsList.length === 0) return false
+      // 补全必要字段
+      const timestamp = Date.now()
+      questions.value = questionsList.map((q, i) => ({
+        id: q.id || `custom-${timestamp}-${i}`,
+        type: q.type || 'concept',
+        category: q.category || 'custom',
+        difficulty: q.difficulty || 'medium',
+        tags: Array.isArray(q.tags) ? q.tags : (q.knowledgePoints || []).slice(0, 3),
+        knowledgePoints: Array.isArray(q.knowledgePoints) ? q.knowledgePoints : [],
+        question: q.question || '',
+        answerPoints: Array.isArray(q.answerPoints) ? q.answerPoints : [],
+      }))
+      interviewType.value = 'custom'
+      currentIndex.value = 0
+      answers.value = {}
+      scores.value = {}
+      conversations.value = {}
+      phase.value = 'answering'
+      startedAt.value = new Date().toISOString()
+      isCustomMode.value = true
+      customSource.value = source
+      return true
+    }
+
+    /** 提交答案，进入评分/评估阶段 */
+    function submitAnswer(questionId, answer, useDeepMode = false) {
       answers.value[questionId] = answer
+      if (useDeepMode) {
+        // 追加到对话记录
+        appendToConversation(questionId, "user", answer)
+      }
       phase.value = "scoring"
     }
 
-    /** 保存 AI 评分结果 */
+    /** 追加消息到某题的对话记录 */
+    function appendToConversation(questionId, role, content) {
+      if (!conversations.value[questionId]) {
+        conversations.value[questionId] = []
+      }
+      conversations.value[questionId].push({ role, content })
+    }
+
+    /** 保存 AI 评分结果（普通模式） */
     function saveScore(questionId, scoreData) {
       scores.value[questionId] = {
         score: scoreData.score ?? 0,
@@ -145,6 +195,26 @@ export const useInterviewStore = defineStore(
       phase.value = "feedback"
     }
 
+    /** 处理深度评估结果（多轮追问模式） */
+    function handleEvaluateResult(questionId, result) {
+      if (result.action === "follow_up") {
+        // 记录 AI 追问，回到答题状态
+        appendToConversation(questionId, "assistant", result.followUpQuestion)
+        phase.value = "answering"
+        return "follow_up"
+      }
+      // action === "complete"，保存最终评分
+      saveScore(questionId, {
+        score: result.score,
+        correctness: result.correctness,
+        completeness: result.completeness,
+        clarity: result.clarity,
+        feedback: result.feedback,
+        improvedAnswer: result.improvedAnswer,
+      })
+      return "complete"
+    }
+
     /** 跳转到指定题目 */
     function goToQuestion(index) {
       if (index < 0 || index >= questions.value.length) return
@@ -152,16 +222,29 @@ export const useInterviewStore = defineStore(
       const q = questions.value[index]
       if (scores.value[q.id]) {
         phase.value = "feedback"
+      } else if (conversations.value[q.id]?.length) {
+        // 有对话记录但未完成评分 → 回到回答阶段继续追问
+        phase.value = "answering"
       } else {
         phase.value = "answering"
       }
     }
 
+    /** 重置当前题目的状态（跳题或切题时调用） */
+    function resetCurrentQuestionState(qId) {
+      // 清除该题的对话记录和评分（如果未完成）
+      if (qId && conversations.value[qId] && !scores.value[qId]) {
+        delete conversations.value[qId]
+      }
+    }
+
     /** 进入下一题或结束面试 */
     function nextQuestion() {
+      const curQId = currentQuestion.value?.id
       if (isLastQuestion.value) {
         finishInterview()
       } else {
+        resetCurrentQuestionState(curQId)
         currentIndex.value++
         phase.value = "answering"
       }
@@ -178,6 +261,9 @@ export const useInterviewStore = defineStore(
         questions: [...questions.value],
         answers: { ...answers.value },
         scores: { ...scores.value },
+        conversations: { ...conversations.value },
+        isCustomMode: isCustomMode.value,
+        customSource: customSource.value,
         startedAt: startedAt.value,
         finishedAt,
         totalScore: totalScore.value,
@@ -192,6 +278,9 @@ export const useInterviewStore = defineStore(
       phase.value = "idle"
       answers.value = {}
       scores.value = {}
+      conversations.value = {}
+      isCustomMode.value = false
+      customSource.value = ''
       startedAt.value = null
     }
 
@@ -218,9 +307,13 @@ export const useInterviewStore = defineStore(
       phase,
       answers,
       scores,
+      conversations,
+      isCustomMode,
+      customSource,
       startedAt,
       history,
       currentQuestion,
+      currentConversation,
       progress,
       isLastQuestion,
       totalScore,
@@ -229,8 +322,11 @@ export const useInterviewStore = defineStore(
       weakPoints,
       overallStats,
       startInterview,
+      loadCustomQuestions,
       submitAnswer,
+      appendToConversation,
       saveScore,
+      handleEvaluateResult,
       nextQuestion,
       goToQuestion,
       finishInterview,

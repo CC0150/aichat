@@ -36,7 +36,7 @@ function handleBackdropClick(e) {
         class="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm"
         @click="handleBackdropClick"
       >
-        <div class="mx-4 w-full max-w-md rounded-2xl border border-border bg-surface-elevated p-6 shadow-xl">
+        <div class="mx-4 w-full max-w-md rounded-2xl border border-border bg-surface-elevated p-5 shadow-xl sm:p-6">
           <h3 v-if="title" class="mb-4 text-base font-semibold tracking-tight text-text-primary">{{ title }}</h3>
           <slot />
           <div class="mt-5 flex justify-end gap-3">

@@ -282,7 +282,7 @@ function handleDetailBackdropClick(e) {
           <div class="stat-card rounded-2xl border border-border bg-surface-elevated p-4 sm:p-5">
             <div class="mb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">面试次数</div>
             <div class="flex items-baseline gap-1">
-              <span class="text-3xl font-bold text-text-primary tracking-tight">{{ stats?.totalInterviews || 0 }}</span>
+              <span class="text-2xl font-bold text-text-primary tracking-tight sm:text-3xl">{{ stats?.totalInterviews || 0 }}</span>
               <span class="text-xs text-text-muted">次</span>
             </div>
             <div class="mt-3 h-1 w-full rounded-full bg-surface-input">
@@ -293,7 +293,7 @@ function handleDetailBackdropClick(e) {
           <div class="stat-card rounded-2xl border border-border bg-surface-elevated p-4 sm:p-5">
             <div class="mb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">平均分</div>
             <div class="flex items-baseline gap-1">
-              <span class="text-3xl font-bold tracking-tight" :class="getScoreColor(stats?.avgScore || 0)">{{ stats?.avgScore || 0 }}</span>
+              <span class="text-2xl font-bold tracking-tight sm:text-3xl" :class="getScoreColor(stats?.avgScore || 0)">{{ stats?.avgScore || 0 }}</span>
               <span class="text-xs text-text-muted">/10</span>
             </div>
             <div class="mt-3 h-1 w-full rounded-full bg-surface-input">
@@ -304,7 +304,7 @@ function handleDetailBackdropClick(e) {
           <div class="stat-card rounded-2xl border border-border bg-surface-elevated p-4 sm:p-5">
             <div class="mb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">最高分</div>
             <div class="flex items-baseline gap-1">
-              <span class="text-3xl font-bold tracking-tight" :class="getScoreColor(bestScore)">{{ bestScore }}</span>
+              <span class="text-2xl font-bold tracking-tight sm:text-3xl" :class="getScoreColor(bestScore)">{{ bestScore }}</span>
               <span class="text-xs text-text-muted">/10</span>
             </div>
             <div class="mt-3 h-1 w-full rounded-full bg-surface-input">
@@ -315,7 +315,7 @@ function handleDetailBackdropClick(e) {
           <div class="stat-card rounded-2xl border border-border bg-surface-elevated p-4 sm:p-5">
             <div class="mb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">薄弱知识点</div>
             <div class="flex items-baseline gap-1">
-              <span class="text-3xl font-bold tracking-tight" :class="interviewStore.weakPoints.length === 0 ? 'text-emerald-500' : 'text-amber-500'">
+              <span class="text-2xl font-bold tracking-tight sm:text-3xl" :class="interviewStore.weakPoints.length === 0 ? 'text-emerald-500' : 'text-amber-500'">
                 {{ interviewStore.weakPoints.length }}
               </span>
               <span class="text-xs text-text-muted">项</span>
@@ -490,10 +490,10 @@ function handleDetailBackdropClick(e) {
                 <div class="flex items-center gap-2">
                   <span class="truncate text-sm font-medium text-text-primary">{{ record.typeLabel || '面试记录' }}</span>
                 </div>
-                <div class="mt-0.5 flex items-center gap-2 text-xs text-text-muted">
+                <div class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-text-muted">
                   <span>{{ new Date(record.finishedAt).toLocaleDateString("zh-CN", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }) }}</span>
-                  <span class="opacity-30">|</span>
-                  <span>{{ (record.questions || []).length }} 题</span>
+                  <span class="opacity-30 hidden sm:inline">|</span>
+                  <span class="hidden sm:inline">{{ (record.questions || []).length }} 题</span>
                   <span class="rounded-full px-1.5 py-0.5 text-[10px] font-medium" :class="getScoreColor(record.totalScore)">
                     {{ getScoreLabel(record.totalScore) }}
                   </span>
@@ -503,7 +503,7 @@ function handleDetailBackdropClick(e) {
               <button
                 v-if="!isDeleteMode"
                 type="button"
-                class="shrink-0 rounded-lg px-3 py-1.5 text-xs text-text-muted opacity-0 transition-all duration-200 hover:bg-surface-input hover:text-primary group-hover:opacity-100"
+                class="shrink-0 rounded-lg px-3 py-1.5 text-xs text-text-muted transition-all duration-200 hover:bg-surface-input hover:text-primary sm:opacity-0 sm:group-hover:opacity-100"
                 @click="openDetail(record)"
               >
                 详情
@@ -523,11 +523,11 @@ function handleDetailBackdropClick(e) {
           @click="handleDetailBackdropClick"
         >
           <div class="mx-4 my-auto w-full max-w-2xl rounded-2xl border border-border bg-surface-elevated shadow-xl">
-            <div class="flex items-center justify-between border-b border-border px-6 py-4">
+            <div class="flex items-center justify-between border-b border-border px-4 py-3 sm:px-6 sm:py-4">
               <div>
                 <h3 class="text-base font-semibold text-text-primary">{{ detailRecord.typeLabel || '面试记录' }}</h3>
                 <p class="mt-0.5 text-xs text-text-muted">
-                  {{ new Date(detailRecord.finishedAt).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }) }}
+                  {{ new Date(detailRecord.finishedAt).toLocaleDateString("zh-CN", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }) }}
                   &nbsp;·&nbsp;{{ (detailRecord.questions || []).length }} 题
                 </p>
               </div>
@@ -540,7 +540,7 @@ function handleDetailBackdropClick(e) {
               </button>
             </div>
 
-            <div class="max-h-[70vh] overflow-y-auto px-6 py-5 thin-scrollbar">
+            <div class="max-h-[70vh] overflow-y-auto px-4 py-4 thin-scrollbar sm:px-6 sm:py-5">
               <div class="mb-5 flex items-center gap-4 rounded-xl bg-surface p-4">
                 <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-base font-bold text-white" :class="getScoreBg(detailRecord.totalScore)">
                   {{ detailRecord.totalScore }}
@@ -601,7 +601,34 @@ function handleDetailBackdropClick(e) {
                     </div>
                     <p class="text-sm text-text-primary leading-relaxed">{{ q.question }}</p>
 
-                    <div v-if="detailRecord.answers[q.id]" class="mt-3 rounded-lg bg-surface-input px-4 py-3">
+                    <!-- 多轮对话记录 -->
+                    <div
+                      v-if="(detailRecord.conversations[q.id] || []).length > 0"
+                      class="mt-3 space-y-2"
+                    >
+                      <div class="mb-1.5 text-[11px] font-medium text-text-muted">对话记录</div>
+                      <div
+                        v-for="(msg, mi) in detailRecord.conversations[q.id]"
+                        :key="mi"
+                        class="flex"
+                        :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
+                      >
+                        <div
+                          class="max-w-[85%] rounded-xl px-3 py-2 text-sm leading-relaxed"
+                          :class="msg.role === 'user'
+                            ? 'bg-primary/10 text-text-primary'
+                            : 'bg-surface-input text-text-secondary'"
+                        >
+                          <span class="text-xs font-medium" :class="msg.role === 'user' ? 'text-primary' : 'text-text-muted'">
+                            {{ msg.role === 'user' ? '你' : `AI 追问 (第${Math.ceil((mi + 1) / 2)}轮)` }}
+                          </span>
+                          <p class="mt-0.5 whitespace-pre-wrap">{{ msg.content }}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 普通模式的回答（无追问对话时使用） -->
+                    <div v-else-if="detailRecord.answers[q.id]" class="mt-3 rounded-lg bg-surface-input px-4 py-3">
                       <div class="mb-1.5 text-[11px] font-medium text-text-muted">你的回答</div>
                       <p class="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{{ detailRecord.answers[q.id] }}</p>
                     </div>

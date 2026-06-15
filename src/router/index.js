@@ -17,13 +17,19 @@ const routes = [
     path: "/interview",
     name: "Interview",
     component: () => import("@/views/InterviewView.vue"),
-    meta: { title: "面试" },
+    meta: { title: "AI 面试" },
   },
   {
     path: "/stats",
     name: "Stats",
     component: () => import("@/views/StatsView.vue"),
-    meta: { title: "统计" },
+    meta: { title: "面试记录" },
+  },
+  {
+    path: "/knowledge",
+    name: "Knowledge",
+    component: () => import("@/views/KnowledgeView.vue"),
+    meta: { title: "知识库" },
   },
 ];
 
@@ -33,7 +39,7 @@ const router = createRouter({
 });
 
 router.afterEach((to) => {
-  document.title = to.meta.title ? `${to.meta.title} - AI 聊天` : "AI 聊天";
+  document.title = to.meta.title ? `${to.meta.title} - Intervy` : "Intervy";
 });
 
 export default router;

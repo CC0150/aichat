@@ -1,9 +1,9 @@
 <script setup>
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useInterviewStore } from '@/stores/interview'
 import { useAppStore } from '@/stores/app'
-import { requestScore } from '@/utils/interviewApi'
+import { requestScore, requestEvaluate } from '@/utils/interviewApi'
 
 const emit = defineEmits(['quit'])
 const interviewStore = useInterviewStore()
@@ -17,11 +17,23 @@ const textareaRef = ref(null)
 const codeAreaRef = ref(null)
 const isCodingQuestion = ref(false)
 const draftAnswers = reactive({})
+const followUpQuestion = ref('')
+const currentRound = ref(0)
+const useDeepMode = ref(true)    // 默认启用深度追问模式
+
+const MAX_FOLLOW_UP_ROUNDS = 3
+
+/** 当前题目的对话轮次（追问次数） */
+const conversationRounds = computed(() =>
+  Math.floor((interviewStore.conversations[interviewStore.currentQuestion?.id]?.length || 0) / 2)
+)
 
 function handleQuit() {
   userAnswer.value = ''
   codeAnswer.value = ''
   scoreError.value = ''
+  followUpQuestion.value = ''
+  currentRound.value = 0
   emit('quit')
 }
 
@@ -71,16 +83,29 @@ function restoreDraft(qId) {
   }
 }
 
-// 题目切换时恢复答案（immediate 确保首次挂载时就识别 coding 类型）
+// 题目切换时恢复答案和追问状态
 watch(() => interviewStore.currentQuestion, (q, oldQ) => {
   saveDraft(oldQ?.id)
   scoreError.value = ''
   isCodingQuestion.value = q?.type === 'coding'
   if (q) {
     restoreDraft(q.id)
+    // 恢复追问状态
+    const conv = interviewStore.conversations[q.id] || []
+    if (conv.length > 0 && !interviewStore.scores[q.id]) {
+      // 有对话记录且未完成 → 从最后一条 assistant 消息获取追问
+      const lastAssistant = [...conv].reverse().find((m) => m.role === 'assistant')
+      followUpQuestion.value = lastAssistant?.content || ''
+      currentRound.value = Math.floor(conv.length / 2)
+    } else {
+      followUpQuestion.value = ''
+      currentRound.value = 0
+    }
   } else {
     userAnswer.value = ''
     codeAnswer.value = ''
+    followUpQuestion.value = ''
+    currentRound.value = 0
   }
 }, { immediate: true })
 
@@ -97,6 +122,7 @@ function getQuestionStatus(index) {
   if (!q) return 'unanswered'
   if (index === interviewStore.currentIndex) return 'current'
   if (interviewStore.scores[q.id]) return 'scored'
+  if (interviewStore.conversations[q.id]?.length) return 'draft'
   if (draftAnswers[q.id] || interviewStore.answers[q.id]) return 'draft'
   return 'unanswered'
 }
@@ -116,32 +142,78 @@ async function handleSubmit() {
     if (!answer) return
   }
 
-  interviewStore.submitAnswer(q.id, answer)
-  // 清除草稿
-  delete draftAnswers[q.id]
-  isScoring.value = true
-  scoreError.value = ''
 
-  try {
-    const result = await requestScore({
-      question: q.question,
-      answerPoints: q.answerPoints,
-      userAnswer: answer,
-      model: appStore.currentModelId,
-    })
-    interviewStore.saveScore(q.id, result)
-  } catch (err) {
-    scoreError.value = err.message || '评分失败'
-    interviewStore.saveScore(q.id, {
-      score: 5,
-      correctness: 5,
-      completeness: 5,
-      clarity: 5,
-      feedback: `评分服务异常：${err.message}。以下为默认评分，请重新提交或稍后重试。`,
-      improvedAnswer: '',
-    })
-  } finally {
-    isScoring.value = false
+  if (useDeepMode.value) {
+    // 深度追问模式
+    interviewStore.submitAnswer(q.id, answer, true)
+    isScoring.value = true
+    scoreError.value = ''
+
+    try {
+      const conversationHistory = interviewStore.conversations[q.id] || []
+      const result = await requestEvaluate({
+        question: q.question,
+        answerPoints: q.answerPoints,
+        conversationHistory,
+        model: appStore.currentModelId,
+      })
+
+      const action = interviewStore.handleEvaluateResult(q.id, result)
+
+      if (action === 'follow_up') {
+        followUpQuestion.value = result.followUpQuestion
+        currentRound.value++
+        userAnswer.value = ''
+        codeAnswer.value = ''
+      } else {
+        // complete
+        followUpQuestion.value = ''
+        currentRound.value = 0
+      }
+      delete draftAnswers[q.id]
+    } catch (err) {
+      scoreError.value = err.message || '评估失败'
+      // 降级为直接完成
+      interviewStore.saveScore(q.id, {
+        score: 5,
+        correctness: 5,
+        completeness: 5,
+        clarity: 5,
+        feedback: `评估服务异常：${err.message}。已为你生成默认评分。`,
+        improvedAnswer: '',
+      })
+      followUpQuestion.value = ''
+      currentRound.value = 0
+    } finally {
+      isScoring.value = false
+    }
+  } else {
+    // 普通评分模式（保留向后兼容）
+    interviewStore.submitAnswer(q.id, answer, false)
+    isScoring.value = true
+    scoreError.value = ''
+
+    try {
+      const result = await requestScore({
+        question: q.question,
+        answerPoints: q.answerPoints,
+        userAnswer: answer,
+        model: appStore.currentModelId,
+      })
+      interviewStore.saveScore(q.id, result)
+    } catch (err) {
+      scoreError.value = err.message || '评分失败'
+      interviewStore.saveScore(q.id, {
+        score: 5,
+        correctness: 5,
+        completeness: 5,
+        clarity: 5,
+        feedback: `评分服务异常：${err.message}。以下为默认评分，请重新提交或稍后重试。`,
+        improvedAnswer: '',
+      })
+    } finally {
+      isScoring.value = false
+    }
   }
 }
 
@@ -149,6 +221,8 @@ function handleNext() {
   userAnswer.value = ''
   codeAnswer.value = ''
   scoreError.value = ''
+  followUpQuestion.value = ''
+  currentRound.value = 0
   interviewStore.nextQuestion()
 }
 
@@ -179,7 +253,7 @@ function handleKeydown(e) {
 <template>
   <div class="flex h-full flex-col" @keydown="handleKeydown">
     <!-- 进度条 -->
-    <div class="shrink-0 border-b border-border bg-surface px-6 py-3">
+    <div class="shrink-0 border-b border-border bg-surface px-3 py-2.5 sm:px-6 sm:py-3">
       <div class="mb-1.5 flex items-center justify-between text-xs text-text-muted">
         <span>第 {{ interviewStore.progress.current }} / {{ interviewStore.progress.total }} 题</span>
         <div class="flex items-center gap-3">
@@ -202,13 +276,13 @@ function handleKeydown(e) {
     </div>
 
     <!-- 题号导航 -->
-    <div class="shrink-0 border-b border-border bg-surface px-6 py-2.5">
-      <div class="flex items-center gap-1.5 overflow-x-auto thin-scrollbar">
+    <div class="shrink-0 border-b border-border bg-surface px-3 py-2 sm:px-6 sm:py-2.5">
+      <div class="flex items-center gap-1 overflow-x-auto thin-scrollbar sm:gap-1.5">
         <button
           v-for="(_, idx) in interviewStore.questions"
           :key="idx"
           type="button"
-          class="flex shrink-0 items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200"
+          class="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-all duration-200 sm:px-3"
           :class="{
             'bg-primary text-white shadow-sm': getQuestionStatus(idx) === 'current',
             'bg-emerald-500/10 text-emerald-500': getQuestionStatus(idx) === 'scored',
@@ -229,7 +303,7 @@ function handleKeydown(e) {
     </div>
 
     <!-- 主内容区 -->
-    <div class="flex-1 overflow-y-auto px-6 py-6 thin-scrollbar">
+    <div class="flex-1 overflow-y-auto px-4 py-5 thin-scrollbar sm:px-6 sm:py-6">
       <div class="mx-auto max-w-3xl">
         <!-- 题目元信息 -->
         <div class="mb-4 flex flex-wrap items-center gap-2">
@@ -251,9 +325,50 @@ function handleKeydown(e) {
         </div>
 
         <!-- 题目文字 -->
-        <h2 class="mb-8 text-lg leading-relaxed text-text-primary">
+        <h2 class="mb-6 text-lg leading-relaxed text-text-primary">
           {{ interviewStore.currentQuestion?.question }}
         </h2>
+
+        <!-- 多轮对话历史 -->
+        <div
+          v-if="interviewStore.currentConversation.length > 0"
+          class="mb-5 space-y-3"
+        >
+          <div
+            v-for="(msg, mi) in interviewStore.currentConversation"
+            :key="mi"
+            class="flex"
+            :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
+          >
+            <div
+              class="max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed"
+              :class="msg.role === 'user'
+                ? 'bg-primary/10 text-text-primary border border-primary/15'
+                : 'bg-surface-input text-text-secondary border border-border'"
+            >
+              <div class="mb-1 flex items-center gap-1.5 text-xs font-medium" :class="msg.role === 'user' ? 'text-primary' : 'text-text-muted'">
+                <Icon
+                  :icon="msg.role === 'user' ? 'lucide:user' : 'lucide:bot'"
+                  class="h-3 w-3"
+                />
+                <span>{{ msg.role === 'user' ? '你的回答' : `AI 追问 (第${Math.ceil((mi + 1) / 2)}轮)` }}</span>
+              </div>
+              <p>{{ msg.content }}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 追问指示器 -->
+        <div
+          v-if="followUpQuestion && interviewStore.phase === 'answering'"
+          class="mb-4 flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3"
+        >
+          <Icon icon="lucide:sparkles" class="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+          <div class="text-sm">
+            <span class="font-medium text-amber-500">AI 追问（第 {{ currentRound }}/{{ MAX_FOLLOW_UP_ROUNDS }} 轮）</span>
+            <p class="mt-1 text-text-secondary">{{ followUpQuestion }}</p>
+          </div>
+        </div>
 
         <!-- 输入 / 提示区域 -->
         <div v-if="interviewStore.phase === 'answering' || interviewStore.phase === 'scoring'">
@@ -281,7 +396,7 @@ function handleKeydown(e) {
                 <textarea
                   ref="codeAreaRef"
                   v-model="codeAnswer"
-                  class="min-h-[160px] flex-1 resize-none border-0 bg-transparent py-3 pl-2 pr-4 font-mono text-sm leading-relaxed text-[#c9d1d9] placeholder:text-white/20 focus:outline-none"
+                  class="min-h-[130px] flex-1 resize-none border-0 bg-transparent py-3 pl-2 pr-4 font-mono text-sm leading-relaxed text-[#c9d1d9] placeholder:text-white/20 focus:outline-none sm:min-h-[160px]"
                   placeholder="// 在此编写你的代码...
           // 例如：
           function solution() {
@@ -320,15 +435,16 @@ function handleKeydown(e) {
             />
           </template>
 
-          <div class="mt-3 flex items-center justify-between">
-            <span class="text-xs text-text-muted">{{ (codeAnswer.length + userAnswer.length) }} 字符</span>
+          <div class="mt-3 flex items-center justify-between gap-2">
+            <span class="hidden text-xs text-text-muted sm:inline">{{ (codeAnswer.length + userAnswer.length) }} 字符</span>
             <button
               type="button"
-              class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white transition-all duration-200 hover:bg-primary/90 disabled:opacity-50"
+              class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white transition-all duration-200 hover:bg-primary/90 disabled:opacity-50 sm:w-auto"
               :disabled="(!codeAnswer.trim() && !userAnswer.trim()) || isScoring"
               @click="handleSubmit"
             >
               <span v-if="isScoring" class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              <span v-else-if="currentRound > 0">补充回答（第 {{ currentRound }}/{{ MAX_FOLLOW_UP_ROUNDS }} 轮）</span>
               <span v-else>提交回答</span>
             </button>
           </div>
@@ -336,10 +452,36 @@ function handleKeydown(e) {
 
         <!-- 评分反馈 -->
         <div v-if="interviewStore.phase === 'feedback'" class="space-y-4 animate-fade-in">
+          <!-- 对话回顾 -->
+          <div
+            v-if="interviewStore.currentConversation.length > 0"
+            class="rounded-2xl border border-border bg-surface-elevated p-4"
+          >
+            <h3 class="mb-3 text-sm font-semibold text-text-primary">对话回顾</h3>
+            <div class="space-y-2.5">
+              <div
+                v-for="(msg, mi) in interviewStore.currentConversation"
+                :key="mi"
+                class="flex"
+                :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
+              >
+                <div
+                  class="max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed"
+                  :class="msg.role === 'user'
+                    ? 'bg-primary/10 text-text-primary'
+                    : 'bg-surface-input text-text-secondary'"
+                >
+                  <span class="font-medium">{{ msg.role === 'user' ? '你' : 'AI' }}</span>
+                  <p class="mt-0.5">{{ msg.content }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- 评分卡片 -->
-          <div class="rounded-2xl border border-border bg-surface-elevated p-5">
+          <div class="rounded-2xl border border-border bg-surface-elevated p-4 sm:p-5">
             <h3 class="mb-4 text-sm font-semibold text-text-primary">评分结果</h3>
-            <div class="grid grid-cols-4 gap-3">
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div class="text-center">
                 <div class="text-2xl font-bold text-primary">
                   <template v-if="interviewStore.scores[interviewStore.currentQuestion?.id]?.score != null">
@@ -402,7 +544,7 @@ function handleKeydown(e) {
           <div class="flex justify-end pt-2">
             <button
               type="button"
-              class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white transition-all duration-200 hover:bg-primary/90"
+              class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white transition-all duration-200 hover:bg-primary/90 sm:w-auto"
               @click="handleNext"
             >
               {{ interviewStore.isLastQuestion ? '查看结果' : '下一题' }}

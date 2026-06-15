@@ -3,13 +3,27 @@ import { ref, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useRouter } from 'vue-router'
 import { useInterviewStore } from '@/stores/interview'
+import { useAppStore } from '@/stores/app'
 import { interviewTypes } from '@/data/questions/index.js'
+import { requestGenerateQuestions, requestGenerateQuestionsByRole } from '@/utils/interviewApi'
+import { parseFile } from '@/utils/docParser'
+import { useKnowledgeStore } from '@/stores/knowledge'
 import InterviewSession from '@/components/interview/InterviewSession.vue'
 
 const router = useRouter()
 const interviewStore = useInterviewStore()
+const appStore = useAppStore()
+const knowledgeStore = useKnowledgeStore()
 
+const activeTab = ref('bank')             // 'bank' | 'file' | 'knowledge'
 const selectedType = ref(null)
+
+function switchTab(tab) {
+  activeTab.value = tab
+  if (tab === 'knowledge') {
+    knowledgeStore.fetchKBs()
+  }
+}
 const questionCount = ref(5)
 const difficulty = ref("all")
 
@@ -60,11 +74,151 @@ const difficultyOptions = [
   { value: "hard", label: "困难" },
 ]
 
+// ===== 文件出题模式 =====
+const fileInputRef = ref(null)
+const uploadedFile = ref(null)      // { name, text, type }
+const isParsing = ref(false)
+const isGenerating = ref(false)
+const fileError = ref('')
+
+function triggerFileSelect() {
+  if (fileInputRef.value) fileInputRef.value.click()
+}
+
+async function handleFileUpload(event) {
+  const files = Array.from(event.target.files || [])
+  if (!files.length) return
+  const file = files[0]
+  isParsing.value = true
+  fileError.value = ''
+  try {
+    const parsed = await parseFile(file)
+    if (!parsed.text || parsed.text.trim().length < 50) {
+      fileError.value = '文件内容过短（不足 50 字），无法生成有效题目。请上传内容更丰富的文档。'
+      uploadedFile.value = null
+    } else {
+      uploadedFile.value = parsed
+    }
+  } catch (err) {
+    fileError.value = err.message || '文件解析失败，请重试'
+    uploadedFile.value = null
+  } finally {
+    isParsing.value = false
+    event.target.value = ''
+  }
+}
+
+function removeUploadedFile() {
+  uploadedFile.value = null
+  fileError.value = ''
+}
+
+async function startFileInterview() {
+  if (!uploadedFile.value || isGenerating.value) return
+  isGenerating.value = true
+  fileError.value = ''
+  try {
+    const result = await requestGenerateQuestions({
+      content: uploadedFile.value.text,
+      questionCount: questionCount.value,
+      difficulty: difficulty.value,
+      model: appStore.currentModelId,
+    })
+    if (!result.questions || result.questions.length === 0) {
+      fileError.value = result.error || 'AI 未能生成有效题目，请换一个文档重试。'
+      return
+    }
+    interviewStore.loadCustomQuestions(result.questions, uploadedFile.value.name)
+  } catch (err) {
+    fileError.value = err.message || '题目生成失败，请重试'
+  } finally {
+    isGenerating.value = false
+  }
+}
+
+// ===== 知识库出题模式 =====
+const selectedKBId = ref(null)
+const isKBGenerating = ref(false)
+const kbError = ref('')
+
+function selectKB(kbId) {
+  selectedKBId.value = kbId
+  kbError.value = ''
+}
+
+async function startKBInterview() {
+  if (!selectedKBId.value || isKBGenerating.value) return
+  isKBGenerating.value = true
+  kbError.value = ''
+  try {
+    const result = await knowledgeStore.generateQuestions(selectedKBId.value, {
+      questionCount: questionCount.value,
+      difficulty: difficulty.value,
+      model: appStore.currentModelId,
+    })
+    if (!result.questions || result.questions.length === 0) {
+      kbError.value = result.error || 'AI 未能生成有效题目，请重试。'
+      return
+    }
+    const kb = knowledgeStore.kbs.find((k) => k.id === selectedKBId.value)
+    interviewStore.loadCustomQuestions(result.questions, kb ? `知识库：${kb.name}` : '知识库')
+  } catch (err) {
+    kbError.value = err.message || '题目生成失败，请重试'
+  } finally {
+    isKBGenerating.value = false
+  }
+}
+
+// ===== 题库模式 =====
+
+const customRole = ref('')
+const isCustomRole = ref(false)
+const isRoleGenerating = ref(false)
+const roleError = ref('')
+
+function selectCustomRole() {
+  const role = customRole.value.trim()
+  if (!role) return
+  selectedType.value = role
+  isCustomRole.value = true
+  roleError.value = ''
+}
+
+function onRoleKeydown(e) {
+  if (e.key === 'Enter') selectCustomRole()
+}
+
 function selectType(key) {
   selectedType.value = key
+  isCustomRole.value = false
   const type = interviewTypes[key]
   if (type) {
     questionCount.value = type.questionCount
+  }
+  isCustomCount.value = false
+  roleError.value = ''
+}
+
+async function startRoleInterview() {
+  if (!selectedType.value || isRoleGenerating.value) return
+  isRoleGenerating.value = true
+  roleError.value = ''
+  try {
+    const result = await requestGenerateQuestionsByRole({
+      role: selectedType.value,
+      questionCount: questionCount.value,
+      difficulty: difficulty.value,
+      model: appStore.currentModelId,
+    })
+    if (!result.questions || result.questions.length === 0) {
+      roleError.value = result.error || 'AI 未能生成有效题目，请重试。'
+      return
+    }
+    interviewStore.loadCustomQuestions(result.questions, `岗位：${selectedType.value}`)
+  } catch (err) {
+    roleError.value = err.message || '题目生成失败，请重试'
+  } finally {
+    isRoleGenerating.value = false
   }
 }
 
@@ -85,6 +239,14 @@ function backToHome() {
   selectedType.value = null
   questionCount.value = 5
   difficulty.value = "all"
+  uploadedFile.value = null
+  fileError.value = ''
+  selectedKBId.value = null
+  kbError.value = ''
+  customRole.value = ''
+  isCustomRole.value = false
+  roleError.value = ''
+  activeTab.value = 'bank'
 }
 
 function goToChat() {
@@ -116,34 +278,233 @@ function getScoreBg(score) {
 <template>
   <div class="flex h-full flex-col bg-background">
     <!-- 选择面试类型 -->
-    <div v-if="interviewStore.phase === 'idle'" class="flex flex-1 justify-center overflow-y-auto px-6 py-10 thin-scrollbar">
+    <div v-if="interviewStore.phase === 'idle'" class="flex flex-1 justify-center overflow-y-auto px-4 py-6 sm:px-6 sm:py-10 thin-scrollbar">
       <div class="w-full max-w-lg">
-        <div class="mb-8 text-center">
-          <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-muted">
-            <Icon icon="lucide:presentation" class="h-8 w-8 text-primary" />
+        <div class="mb-6 sm:mb-8 text-center">
+          <div class="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-muted sm:mb-4 sm:h-16 sm:w-16">
+            <Icon icon="lucide:presentation" class="h-7 w-7 text-primary sm:h-8 sm:w-8" />
           </div>
-          <h1 class="text-xl font-semibold text-text-primary">AI 面试教练</h1>
-          <p class="mt-2 text-sm text-text-secondary">选择面试类型，AI 将模拟真实面试场景帮助你练习</p>
+          <h1 class="text-lg font-semibold text-text-primary sm:text-xl">AI 面试</h1>
+          <p class="mt-1.5 text-xs text-text-secondary sm:mt-2 sm:text-sm">选择面试类型，AI 将模拟真实面试场景帮助你练习</p>
         </div>
 
-        <div class="space-y-3">
+        <!-- 标签切换 -->
+        <div class="flex gap-0.5 rounded-xl bg-surface-input p-1 sm:gap-1">
           <button
-            v-for="opt in typeOptions"
-            :key="opt.key"
+            v-for="tab in [{ key: 'bank', label: '题库出题', icon: 'lucide:library' }, { key: 'file', label: '文件出题', icon: 'lucide:file-up' }, { key: 'knowledge', label: '知识库出题', icon: 'lucide:database' }]"
+            :key="tab.key"
             type="button"
-            class="w-full rounded-2xl border p-4 text-left transition-all duration-200"
-            :class="selectedType === opt.key
-              ? 'border-primary bg-primary-muted/50 ring-1 ring-primary'
-              : 'border-border bg-surface-elevated hover:border-primary/30 hover:bg-surface'"
-            @click="selectType(opt.key)"
+            class="flex-1 flex items-center justify-center gap-1 rounded-lg px-1.5 py-2 text-xs font-medium transition-all duration-200 sm:gap-1.5 sm:px-3 sm:text-sm"
+            :class="activeTab === tab.key
+              ? 'bg-surface text-text-primary shadow-sm'
+              : 'text-text-muted hover:text-text-secondary'"
+            @click="switchTab(tab.key)"
           >
-            <div class="text-sm font-semibold text-text-primary">{{ opt.label }}</div>
-            <div class="mt-1 text-xs text-text-muted">{{ opt.description }}</div>
+            <Icon :icon="tab.icon" class="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            {{ tab.label }}
           </button>
         </div>
 
-        <!-- 题数和难度设置 -->
-        <div v-if="selectedType" class="mt-5 space-y-4 animate-fade-in">
+        <!-- 题库模式 -->
+        <template v-if="activeTab === 'bank'">
+          <!-- 自定义岗位输入 -->
+          <div class="mt-4">
+            <label class="mb-2 block text-xs font-medium text-text-secondary">输入目标岗位，AI 自动生成面试题</label>
+            <div class="flex gap-2">
+              <input
+                v-model="customRole"
+                type="text"
+                class="flex-1 rounded-xl border border-border bg-surface-input px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-muted transition-colors duration-200"
+                placeholder="例如：Java 后端开发、产品经理、数据分析..."
+                maxlength="50"
+                @keydown="onRoleKeydown"
+              />
+              <button
+                type="button"
+                class="shrink-0 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition-all duration-200 hover:bg-primary/90 disabled:opacity-40"
+                :disabled="!customRole.trim()"
+                @click="selectCustomRole"
+              >确认</button>
+            </div>
+            <!-- 岗位错误提示 -->
+            <div
+              v-if="roleError"
+              class="mt-3 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-500"
+            >
+              <div class="flex items-start gap-2">
+                <Icon icon="lucide:alert-circle" class="mt-0.5 h-4 w-4 shrink-0" />
+                <p>{{ roleError }}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 或选择前端预设 -->
+          <div v-if="typeOptions.length" class="mt-4">
+            <div class="relative mb-3">
+              <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-border"></div></div>
+              <div class="relative flex justify-center"><span class="bg-background px-3 text-xs text-text-muted">或选择前端预设</span></div>
+            </div>
+            <div class="space-y-2.5">
+              <button
+                v-for="opt in typeOptions"
+                :key="opt.key"
+                type="button"
+                class="w-full rounded-2xl border p-4 text-left transition-all duration-200"
+                :class="selectedType === opt.key
+                  ? 'border-primary bg-primary-muted/50 ring-1 ring-primary'
+                  : 'border-border bg-surface-elevated hover:border-primary/30 hover:bg-surface'"
+                @click="selectType(opt.key)"
+              >
+                <div class="text-sm font-semibold text-text-primary">{{ opt.label }}</div>
+                <div class="mt-1 text-xs text-text-muted">{{ opt.description }}</div>
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <!-- 文件模式 -->
+        <template v-if="activeTab === 'file'">
+          <!-- 文件上传区域（未上传时） -->
+          <div
+            v-if="!uploadedFile && !isParsing"
+            class="mt-4 flex cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-border px-4 py-8 text-center transition-all duration-200 hover:border-primary/50 hover:bg-surface-input/50 sm:px-6 sm:py-10"
+            @click="triggerFileSelect"
+          >
+            <div class="flex h-14 w-14 items-center justify-center rounded-xl bg-primary-muted">
+              <Icon icon="lucide:upload" class="h-7 w-7 text-primary" />
+            </div>
+            <div>
+              <p class="text-sm font-medium text-text-primary">点击上传文件</p>
+              <p class="mt-1 text-xs text-text-muted">支持 PDF / Word / TXT，基于文件内容 AI 生成面试题</p>
+            </div>
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept=".pdf,.docx,.txt,.md,.json,.csv"
+              class="hidden"
+              @change="handleFileUpload"
+            />
+          </div>
+
+          <!-- 解析中 -->
+          <div
+            v-if="isParsing"
+            class="mt-4 flex flex-col items-center gap-3 rounded-2xl border border-border bg-surface-elevated px-6 py-10 text-center"
+          >
+            <div class="inline-block h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <p class="text-sm text-text-muted">正在解析文件...</p>
+          </div>
+
+          <!-- 文件信息 + 预览（上传成功后） -->
+          <div
+            v-if="uploadedFile && !fileError"
+            class="mt-4 space-y-3"
+          >
+            <div class="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <Icon icon="lucide:file-text" class="h-5 w-5 text-emerald-500" />
+                  <div>
+                    <p class="text-sm font-medium text-text-primary">{{ uploadedFile.name }}</p>
+                    <p class="text-xs text-text-muted">
+                      {{ uploadedFile.type === 'pdf' ? 'PDF' : uploadedFile.type === 'word' ? 'Word' : '文本' }}
+                      &middot; {{ uploadedFile.text.length }} 字
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-red-500/10 hover:text-red-500"
+                  @click="removeUploadedFile"
+                >
+                  <Icon icon="lucide:x" class="h-4 w-4" />
+                </button>
+              </div>
+              <!-- 内容预览 -->
+              <div class="mt-3 max-h-32 overflow-y-auto rounded-lg border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-text-muted">
+                {{ uploadedFile.text.slice(0, 500) }}{{ uploadedFile.text.length > 500 ? '...' : '' }}
+              </div>
+            </div>
+          </div>
+
+          <!-- 错误提示 -->
+          <div
+            v-if="fileError"
+            class="mt-4 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-500"
+          >
+            <div class="flex items-start gap-2">
+              <Icon icon="lucide:alert-circle" class="mt-0.5 h-4 w-4 shrink-0" />
+              <p>{{ fileError }}</p>
+            </div>
+          </div>
+        </template>
+
+        <!-- 知识库模式 -->
+        <template v-if="activeTab === 'knowledge'">
+          <!-- 加载中 -->
+          <div v-if="knowledgeStore.loading && knowledgeStore.kbs.length === 0" class="mt-4 flex flex-col items-center gap-3 rounded-2xl border border-border bg-surface-elevated px-6 py-8 text-center">
+            <div class="inline-block h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <p class="text-sm text-text-muted">加载知识库...</p>
+          </div>
+
+          <!-- 空状态：无知识库 -->
+          <div v-else-if="knowledgeStore.kbs.length === 0" class="mt-4 rounded-2xl border border-dashed border-border px-6 py-10 text-center">
+            <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-primary-muted">
+              <Icon icon="lucide:database" class="h-6 w-6 text-primary" />
+            </div>
+            <p class="text-sm font-medium text-text-primary">还没有知识库</p>
+            <p class="mt-1 text-xs text-text-muted">先去知识库页面创建知识库并上传文档</p>
+            <router-link
+              to="/knowledge"
+              class="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+            >
+              <Icon icon="lucide:arrow-right" class="h-4 w-4" />
+              前往知识库
+            </router-link>
+          </div>
+
+          <!-- KB 选择列表 -->
+          <div v-else class="mt-4 space-y-2.5">
+            <p class="text-xs font-medium text-text-secondary">选择一个知识库</p>
+            <button
+              v-for="kb in knowledgeStore.kbs"
+              :key="kb.id"
+              type="button"
+              class="w-full rounded-2xl border p-4 text-left transition-all duration-200"
+              :class="selectedKBId === kb.id
+                ? 'border-primary bg-primary-muted/50 ring-1 ring-primary'
+                : 'border-border bg-surface-elevated hover:border-primary/30 hover:bg-surface'"
+              @click="selectKB(kb.id)"
+            >
+              <div class="flex items-center gap-3">
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-muted">
+                  <Icon icon="lucide:folder" class="h-4 w-4 text-primary" />
+                </div>
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold text-text-primary truncate">{{ kb.name }}</div>
+                  <div class="mt-0.5 flex items-center gap-2 text-xs text-text-muted">
+                    <span>{{ kb.fileCount || 0 }} 个文件</span>
+                    <span v-if="kb.description" class="truncate">{{ kb.description }}</span>
+                  </div>
+                </div>
+              </div>
+            </button>
+          </div>
+
+          <!-- 错误提示 -->
+          <div
+            v-if="kbError"
+            class="mt-4 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-500"
+          >
+            <div class="flex items-start gap-2">
+              <Icon icon="lucide:alert-circle" class="mt-0.5 h-4 w-4 shrink-0" />
+              <p>{{ kbError }}</p>
+            </div>
+          </div>
+        </template>
+
+        <!-- 题数和难度设置（三种模式共享） -->
+        <div v-if="(activeTab === 'bank' && selectedType) || (activeTab === 'file' && uploadedFile) || (activeTab === 'knowledge' && selectedKBId)" class="mt-5 space-y-4 animate-fade-in">
           <div>
             <label class="mb-2 block text-xs font-medium text-text-secondary">题目数量</label>
             <div class="flex gap-2 flex-wrap">
@@ -173,9 +534,12 @@ function getScoreBg(score) {
               <button
                 v-else
                 type="button"
-                class="rounded-lg border border-dashed border-border px-3 py-2 text-sm text-text-muted transition-all duration-200 hover:border-primary/30 hover:text-text-secondary"
+                class="rounded-lg border px-3 py-2 text-sm transition-all duration-200"
+                :class="!countPresets.includes(questionCount)
+                  ? 'border-primary bg-primary-muted/50 text-primary'
+                  : 'border-dashed border-border text-text-muted hover:border-primary/30 hover:text-text-secondary'"
                 @click="enableCustomCount"
-              >自定义</button>
+              >自定义{{ !countPresets.includes(questionCount) ? ` (${questionCount}题)` : '' }}</button>
             </div>
           </div>
 
@@ -196,8 +560,11 @@ function getScoreBg(score) {
           </div>
         </div>
 
+        <!-- 开始按钮 -->
         <div class="mt-6 flex justify-center">
+          <!-- 题库模式：预设类型按钮 -->
           <button
+            v-if="activeTab === 'bank' && !isCustomRole"
             type="button"
             class="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-medium text-white transition-all duration-200 hover:bg-primary/90 disabled:opacity-40"
             :disabled="!selectedType"
@@ -205,6 +572,42 @@ function getScoreBg(score) {
           >
             <Icon icon="lucide:play" class="h-4 w-4" />
             开始模拟面试
+          </button>
+          <!-- 题库模式：自定义岗位按钮 -->
+          <button
+            v-if="activeTab === 'bank' && isCustomRole"
+            type="button"
+            class="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-medium text-white transition-all duration-200 hover:bg-primary/90 disabled:opacity-40"
+            :disabled="!selectedType || isRoleGenerating"
+            @click="startRoleInterview"
+          >
+            <span v-if="isRoleGenerating" class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            <Icon v-else icon="lucide:sparkles" class="h-4 w-4" />
+            {{ isRoleGenerating ? '正在生成题目...' : '生成题目并开始面试' }}
+          </button>
+          <!-- 文件模式按钮 -->
+          <button
+            v-if="activeTab === 'file'"
+            type="button"
+            class="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-medium text-white transition-all duration-200 hover:bg-primary/90 disabled:opacity-40"
+            :disabled="!uploadedFile || isGenerating"
+            @click="startFileInterview"
+          >
+            <span v-if="isGenerating" class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            <Icon v-else icon="lucide:sparkles" class="h-4 w-4" />
+            {{ isGenerating ? '正在生成题目...' : '生成题目并开始面试' }}
+          </button>
+          <!-- 知识库模式按钮 -->
+          <button
+            v-if="activeTab === 'knowledge'"
+            type="button"
+            class="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-medium text-white transition-all duration-200 hover:bg-primary/90 disabled:opacity-40"
+            :disabled="!selectedKBId || isKBGenerating"
+            @click="startKBInterview"
+          >
+            <span v-if="isKBGenerating" class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            <Icon v-else icon="lucide:sparkles" class="h-4 w-4" />
+            {{ isKBGenerating ? '正在生成题目...' : '生成题目并开始面试' }}
           </button>
         </div>
 
@@ -228,9 +631,9 @@ function getScoreBg(score) {
 
     <!-- 面试结果 -->
     <div v-if="interviewStore.phase === 'finished'" class="flex-1 overflow-y-auto thin-scrollbar">
-      <div class="mx-auto max-w-3xl px-6 py-8">
+      <div class="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
         <!-- 总分大卡片 -->
-        <div class="mb-8 rounded-2xl border border-border bg-surface-elevated p-8 text-center">
+        <div class="mb-6 rounded-2xl border border-border bg-surface-elevated p-5 text-center sm:mb-8 sm:p-8">
           <div class="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full" :class="getScoreBg(resultStats().totalScore)">
             <span class="text-3xl font-bold" :class="getScoreColor(resultStats().totalScore)">{{ resultStats().totalScore }}<span class="text-base font-normal text-text-muted">/10</span></span>
           </div>
@@ -306,10 +709,8 @@ function getScoreBg(score) {
             再来一次
           </button>
           <div class="flex items-center gap-1.5 text-xs text-text-muted">
-            <Icon icon="lucide:lightbulb" class="h-3.5 w-3.5" />
-            去 AI 对话中点击
-            <Icon icon="lucide:clipboard-list" class="h-3.5 w-3.5 text-primary" />
-            引用本次面试记录，让 AI 帮你深入分析
+            <Icon icon="lucide:lightbulb" class="h-3.5 w-3.5 shrink-0" />
+            去 AI 对话中引用面试记录，分析薄弱点
           </div>
           <button
             type="button"

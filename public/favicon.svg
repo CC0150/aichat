@@ -1,6 +1,14 @@
 <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Rounded square badge -->
-  <rect x="2" y="2" width="28" height="28" rx="6.5" fill="#4338ca"/>
-  <!-- Geometric spark -->
-  <path d="M16 6L18 15L27 16L18 18L16 27L14 18L5 16L14 15Z" fill="#e0e7ff"/>
+  <!-- Rounded square background -->
+  <rect x="2" y="2" width="28" height="28" rx="7" fill="#4338ca"/>
+  <!-- Interviewer pillar -->
+  <rect x="7" y="10" width="4" height="13" rx="2" fill="#ffffff"/>
+  <!-- Candidate pillar (dimmer) -->
+  <rect x="21" y="10" width="4" height="13" rx="2" fill="#c7d2fe"/>
+  <!-- Interviewer question line -->
+  <path d="M11 14L19 12" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+  <!-- Candidate reply line -->
+  <path d="M11 19L19 22" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+  <!-- AI spark -->
+  <circle cx="22" cy="8" r="2.5" fill="#e0e7ff"/>
 </svg>

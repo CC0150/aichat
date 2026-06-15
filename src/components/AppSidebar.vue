@@ -35,6 +35,11 @@ function goStats() {
   appStore.closeSidebar()
 }
 
+function goKnowledge() {
+  router.push({ name: 'Knowledge' })
+  appStore.closeSidebar()
+}
+
 function goChat(id) {
   chatStore.setCurrentChat(id)
   router.push({ name: 'ChatById', params: { id } })
@@ -138,7 +143,22 @@ function closeDeleteModal() {
         >
           <Icon icon="lucide:presentation" class="h-[18px] w-[18px]" />
         </span>
-        <span v-if="!appStore.sidebarCollapsed" class="truncate text-sm font-medium">面试教练</span>
+        <span v-if="!appStore.sidebarCollapsed" class="truncate text-sm font-medium">AI 面试</span>
+      </button>
+      <button
+        type="button"
+        class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all duration-200"
+        :class="route.name === 'Knowledge'
+          ? 'bg-primary-muted text-primary'
+          : 'text-text-secondary hover:bg-surface-input hover:text-text-primary'"
+        @click="goKnowledge"
+      >
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+          :class="route.name === 'Knowledge' ? 'bg-primary-muted text-primary' : 'bg-surface-input text-text-secondary'"
+        >
+          <Icon icon="lucide:database" class="h-[18px] w-[18px]" />
+        </span>
+        <span v-if="!appStore.sidebarCollapsed" class="truncate text-sm font-medium">知识库</span>
       </button>
       <button
         type="button"
@@ -153,13 +173,13 @@ function closeDeleteModal() {
         >
           <Icon icon="lucide:bar-chart-3" class="h-[18px] w-[18px]" />
         </span>
-        <span v-if="!appStore.sidebarCollapsed" class="truncate text-sm font-medium">学习统计</span>
+        <span v-if="!appStore.sidebarCollapsed" class="truncate text-sm font-medium">面试记录</span>
       </button>
     </div>
 
     <!-- Chat history -->
     <nav v-if="!appStore.sidebarCollapsed" class="flex-1 overflow-y-auto p-2">
-      <ul class="space-y-0.5">
+      <ul v-if="chatStore.history.length > 0" class="space-y-0.5">
         <li v-for="item in chatStore.history" :key="item.id" class="group">
           <div
             class="relative flex items-center gap-1 rounded-lg px-2 py-2 transition-colors duration-200"
@@ -204,6 +224,11 @@ function closeDeleteModal() {
           </div>
         </li>
       </ul>
+      <div v-else class="flex flex-col items-center justify-center py-12 text-center">
+        <Icon icon="lucide:message-square" class="h-8 w-8 text-text-muted/30 mb-3" />
+        <p class="text-xs text-text-muted">暂无对话记录</p>
+        <p class="mt-1 text-[11px] text-text-muted/60">点击上方按钮新建对话</p>
+      </div>
     </nav>
 
     <!-- Theme toggle -->

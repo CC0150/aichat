@@ -55,10 +55,10 @@ const virtualMessages = computed(() =>
 )
 
 const suggestions = [
-  { label: '解释 JavaScript 闭包原理', icon: 'lucide:box' },
-  { label: '手写一个防抖 debounce 函数', icon: 'lucide:code-2' },
-  { label: 'Vue 3 响应式原理是什么', icon: 'lucide:layers' },
-  { label: '前端性能优化有哪些方法', icon: 'lucide:zap' },
+  { label: 'Java 后端开发面试常见考点', icon: 'lucide:coffee' },
+  { label: '产品经理面试中如何回答问题', icon: 'lucide:lightbulb' },
+  { label: '模拟一次前端技术面试', icon: 'lucide:code-2' },
+  { label: '数据分析岗位需要掌握哪些技能', icon: 'lucide:bar-chart-3' },
 ]
 
 function onSuggest(s) {
@@ -319,17 +319,21 @@ onUnmounted(() => {
             <div class="flex items-center gap-2 mb-2">
               <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-muted/80 backdrop-blur-sm ring-1 ring-primary/10">
                 <svg width="14" height="14" viewBox="0 0 40 40" fill="none">
-                  <rect x="3" y="3" width="34" height="34" rx="8.5" class="fill-primary" />
-                  <path d="M20 9L22 18L31 20L22 22L20 31L18 22L9 20L18 18Z" class="fill-primary-muted" />
+                  <rect x="3" y="3" width="34" height="34" rx="9" class="fill-primary" />
+                  <rect x="9" y="12" width="5" height="16" rx="2.5" fill="white" />
+                  <rect x="26" y="12" width="5" height="16" rx="2.5" fill="white" opacity="0.55" />
+                  <path d="M14 18L24 15" stroke="white" stroke-width="2.5" stroke-linecap="round" />
+                  <path d="M14 24L24 27" stroke="white" stroke-width="2.5" stroke-linecap="round" />
+                  <circle cx="27" cy="10" r="3" class="fill-primary-muted" />
                 </svg>
               </div>
-              <span class="text-[11px] font-medium text-text-muted tracking-widest uppercase">AI Assistant for Frontend</span>
+              <span class="text-[11px] font-medium text-text-muted tracking-widest uppercase">AI-Powered Interview Copilot</span>
             </div>
             <h2 class="text-2xl font-semibold tracking-tight text-text-primary leading-[1.25]">
-              你好<span class="text-text-muted">，随时提问</span>
+              你好<span class="text-text-muted">，我是 Intervy</span>
             </h2>
             <p class="mt-1.5 text-sm text-text-muted/70">
-              随时解答前端技术问题，模拟真实面试场景
+              AI 驱动的智能面试助手，随时提问，模拟实战
             </p>
           </div>
 

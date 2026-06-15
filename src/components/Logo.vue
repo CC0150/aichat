@@ -7,7 +7,6 @@ defineProps({
 
 <template>
   <div class="inline-flex items-center gap-2.5 select-none">
-    <!-- Logo mark: rounded badge with geometric spark -->
     <svg
       :width="size"
       :height="size"
@@ -16,18 +15,53 @@ defineProps({
       xmlns="http://www.w3.org/2000/svg"
       class="shrink-0"
     >
-      <!-- Outer rounded square badge -->
+      <!-- Rounded square background -->
       <rect
         x="3"
         y="3"
         width="34"
         height="34"
-        rx="8.5"
+        rx="9"
         class="fill-primary"
       />
-      <!-- Four-point geometric spark -->
+      <!-- Interviewer pillar -->
+      <rect
+        x="9"
+        y="12"
+        width="5"
+        height="16"
+        rx="2.5"
+        fill="white"
+      />
+      <!-- Candidate pillar -->
+      <rect
+        x="26"
+        y="12"
+        width="5"
+        height="16"
+        rx="2.5"
+        fill="white"
+        opacity="0.55"
+      />
+      <!-- Dialogue: interviewer asks -->
       <path
-        d="M20 9L22 18L31 20L22 22L20 31L18 22L9 20L18 18Z"
+        d="M14 18L24 15"
+        stroke="white"
+        stroke-width="2.5"
+        stroke-linecap="round"
+      />
+      <!-- Dialogue: candidate replies -->
+      <path
+        d="M14 24L24 27"
+        stroke="white"
+        stroke-width="2.5"
+        stroke-linecap="round"
+      />
+      <!-- AI spark -->
+      <circle
+        cx="27"
+        cy="10"
+        r="3"
         class="fill-primary-muted"
       />
     </svg>
@@ -35,6 +69,6 @@ defineProps({
     <span
       v-if="showText"
       class="truncate text-[16px] font-semibold tracking-tight text-text-primary"
-    >AIChat</span>
+    >Intervy</span>
   </div>
 </template>

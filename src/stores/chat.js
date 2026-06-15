@@ -10,14 +10,7 @@ export const useChatStore = defineStore(
   () => {
     const currentChatId = ref(null);
     const lastInterruptedChatId = ref(null);
-    const history = ref([
-      { id: "1", title: "Vue 3 响应式原理深入解析", updatedAt: "2026-06-14T10:00:00" },
-      {
-        id: "2",
-        title: "手写防抖与节流函数",
-        updatedAt: "2026-06-13T15:30:00",
-      },
-    ]);
+    const history = ref([]);
     const messagesByChatId = ref({}); // { [id]: [{ role, content }] }
 
     function getContentText(content) {
