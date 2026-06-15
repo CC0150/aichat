@@ -13,6 +13,18 @@ const routes = [
     component: () => import("@/views/ChatView.vue"),
     meta: { title: "对话" },
   },
+  {
+    path: "/interview",
+    name: "Interview",
+    component: () => import("@/views/InterviewView.vue"),
+    meta: { title: "面试" },
+  },
+  {
+    path: "/stats",
+    name: "Stats",
+    component: () => import("@/views/StatsView.vue"),
+    meta: { title: "统计" },
+  },
 ];
 
 const router = createRouter({

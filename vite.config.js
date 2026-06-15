@@ -10,9 +10,10 @@ export default defineConfig({
     },
   },
   server: {
+    allowedHosts: ['frp-gap.com'],
     proxy: {
       '/api': {
-        target: 'http://localhost:8787',
+        target: 'http://localhost:3001',
         changeOrigin: true,
         secure: false,
         // 确保代理不会缓冲 SSE（Server-Sent Events）数据流

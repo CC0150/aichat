@@ -9,12 +9,13 @@ export const useChatStore = defineStore(
   "chat",
   () => {
     const currentChatId = ref(null);
+    const lastInterruptedChatId = ref(null);
     const history = ref([
-      { id: "1", title: "如何学习 Vue 3", updatedAt: "2025-02-08T10:00:00" },
+      { id: "1", title: "Vue 3 响应式原理深入解析", updatedAt: "2026-06-14T10:00:00" },
       {
         id: "2",
-        title: "写一段 Python 脚本",
-        updatedAt: "2025-02-07T15:30:00",
+        title: "手写防抖与节流函数",
+        updatedAt: "2026-06-13T15:30:00",
       },
     ]);
     const messagesByChatId = ref({}); // { [id]: [{ role, content }] }
@@ -279,6 +280,7 @@ export const useChatStore = defineStore(
 
     return {
       currentChatId,
+      lastInterruptedChatId,
       history,
       messagesByChatId,
       currentChat,

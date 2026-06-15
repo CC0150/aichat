@@ -1,4 +1,5 @@
 const chatRouter = require("./chat");
+const interviewRouter = require("./interview");
 const healthRouter = require("./health");
 
 /**
@@ -6,6 +7,7 @@ const healthRouter = require("./health");
  */
 function setupRoutes(app) {
   app.use("/api/chat", chatRouter);
+  app.use("/api/interview", interviewRouter);
   app.use("/health", healthRouter);
 }
 

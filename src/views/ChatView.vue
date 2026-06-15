@@ -42,7 +42,7 @@ function handleSendMessage(content) {
 <template>
   <div class="flex h-full flex-col">
     <ChatHeader @openRenameModal="handleOpenRenameModal" />
-    <MessageArea :showRenameModal="showRenameModal" @closeRenameModal="handleCloseRenameModal" @sendMessage="handleSendMessage" />
+    <MessageArea :showRenameModal="showRenameModal" @closeRenameModal="handleCloseRenameModal" @sendMessage="handleSendMessage" @continueGenerate="chatInputRef?.continueGeneration()" />
     <ChatInput ref="chatInputRef" />
   </div>
 </template>

@@ -7,11 +7,11 @@ export const useAppStore = defineStore('app', () => {
   const sidebarCollapsed = ref(false)
   // 移动端抽屉是否打开
   const sidebarOpen = ref(false)
-  // 是否为深色模式（默认 true）
+  // 是否为深色模式（默认 false = 日间模式）
   const isDark = ref(
     typeof localStorage !== 'undefined'
-      ? localStorage.getItem('theme') !== 'light'
-      : true
+      ? localStorage.getItem('theme') === 'dark'
+      : false
   )
 
   watch(

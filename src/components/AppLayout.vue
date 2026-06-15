@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import { Icon } from '@iconify/vue'
 import { useAppStore } from '@/stores/app'
 import AppSidebar from './AppSidebar.vue'
 
@@ -25,6 +26,17 @@ const showOverlay = computed(() => appStore.sidebarOpen)
         @click="appStore.closeSidebar"
       />
     </Transition>
+
+    <!-- Mobile edge handle -->
+    <button
+      v-if="!appStore.sidebarOpen"
+      type="button"
+      class="mobile-edge-handle fixed left-0 top-1/2 z-30 -translate-y-1/2 flex items-center justify-end pr-0.5 rounded-r-full bg-surface/70 text-text-muted ring-1 ring-border/50 backdrop-blur-sm transition-all duration-200 hover:bg-surface hover:text-text-primary hover:pr-1 lg:hidden"
+      aria-label="打开菜单"
+      @click="appStore.openSidebar()"
+    >
+      <Icon icon="lucide:chevron-right" class="h-4 w-4" />
+    </button>
 
     <!-- Sidebar: fixed on mobile, relative on desktop -->
     <aside
@@ -69,5 +81,11 @@ const showOverlay = computed(() => appStore.sidebarOpen)
 .page-enter-from,
 .page-leave-to {
   opacity: 0;
+}
+
+.mobile-edge-handle {
+  width: 28px;
+  height: 44px;
+  padding-left: 4px;
 }
 </style>

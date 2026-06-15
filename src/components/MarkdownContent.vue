@@ -2,7 +2,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
-import 'highlight.js/styles/github-dark.css'
+import 'highlight.js/styles/github.css'
 
 const props = defineProps({
   content: { type: String, default: '' },
@@ -66,63 +66,129 @@ onUnmounted(() => {
 <template>
   <div
     ref="rootRef"
-    class="markdown-body prose max-w-none text-[15px] leading-relaxed"
+    class="markdown-body prose max-w-none text-[14px] sm:text-[15px] leading-relaxed"
     :class="$style.root"
     v-html="html"
   />
 </template>
 
 <style module>
+/* ---- Code blocks ---- */
 .root :global(.code-block-wrapper) {
-  @apply my-3 overflow-hidden rounded-xl border border-border;
+  @apply my-4 overflow-hidden rounded-xl border border-border;
+  background: #f6f8fa;
 }
 .root :global(.code-block-header) {
-  @apply flex items-center justify-between border-b border-border bg-surface-input px-4 py-2;
+  @apply flex items-center justify-between border-b px-4 py-2;
+  background: #eaeef2;
+  border-color: #d0d7de;
 }
 .root :global(.code-block-lang) {
-  @apply text-[11px] font-medium uppercase tracking-wider text-text-muted;
+  @apply text-[11px] font-medium uppercase tracking-wider;
+  color: #57606a;
 }
 .root :global(.code-block-copy-btn) {
-  @apply flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium text-text-muted transition-colors duration-150 hover:bg-surface-elevated hover:text-text-primary;
+  @apply flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors duration-150;
+  color: #57606a;
+}
+.root :global(.code-block-copy-btn):hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #24292f;
 }
 .root :global(.code-block-wrapper pre) {
-  @apply m-0 rounded-none border-0 bg-transparent p-4 text-[13px] leading-relaxed;
+  @apply m-0 rounded-none border-0 p-3 sm:p-4 text-xs sm:text-[13px] leading-relaxed overflow-x-auto;
+  background: #f6f8fa;
 }
 .root :global(pre code) {
-  @apply bg-transparent p-0 text-[13px];
+  @apply bg-transparent p-0 text-xs sm:text-[13px];
 }
+
+/* ---- Inline code ---- */
 .root :global(code) {
   @apply rounded-md bg-surface-input px-1.5 py-0.5 text-[13px] font-medium text-primary;
 }
-.root :global(p) {
-  @apply my-2 leading-relaxed;
+
+/* ---- Headings ---- */
+.root :global(h1) {
+  @apply mt-6 mb-3 text-lg sm:text-xl font-semibold tracking-tight text-text-primary;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
 }
+.root :global(h2) {
+  @apply mt-5 mb-2.5 text-base sm:text-lg font-semibold tracking-tight text-text-primary;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.root :global(h3) {
+  @apply mt-4 mb-2 text-sm sm:text-base font-semibold tracking-tight text-text-primary;
+}
+.root :global(h4) {
+  @apply mt-3 mb-1.5 text-[13px] sm:text-sm font-semibold tracking-tight text-text-primary;
+}
+
+/* ---- Paragraph ---- */
+.root :global(p) {
+  @apply my-2.5 leading-relaxed;
+}
+
+/* ---- Strong / Bold ---- */
+.root :global(strong) {
+  @apply font-semibold text-text-primary;
+}
+
+/* ---- Lists ---- */
 .root :global(ul),
 .root :global(ol) {
-  @apply my-2 pl-6 leading-relaxed;
+  @apply my-2.5 pl-6 leading-relaxed space-y-1;
 }
+.root :global(li) {
+  @apply text-text-secondary;
+}
+.root :global(ul > li::marker) {
+  color: var(--color-primary);
+}
+.root :global(ol > li::marker) {
+  @apply text-xs font-semibold;
+  color: var(--color-text-muted);
+}
+
+/* ---- Blockquote ---- */
 .root :global(blockquote) {
-  @apply my-3 border-l-[3px] border-primary-muted pl-4 italic text-text-secondary;
+  @apply my-4 border-l-[3px] border-primary-muted bg-surface px-4 py-2.5 rounded-r-lg italic text-text-secondary;
 }
+
+/* ---- Links ---- */
 .root :global(a) {
   @apply font-medium text-primary underline decoration-primary-muted underline-offset-2 transition-colors hover:decoration-primary;
 }
-.root :global(h1),
-.root :global(h2),
-.root :global(h3),
-.root :global(h4) {
-  @apply mt-4 mb-2 font-semibold tracking-tight text-text-primary;
-}
+
+/* ---- Horizontal rule ---- */
 .root :global(hr) {
-  @apply my-4 border-border;
+  @apply my-5 border-border;
 }
+
+/* ---- Tables ---- */
 .root :global(table) {
-  @apply my-3 w-full overflow-hidden rounded-lg border border-border;
+  @apply my-4 w-full overflow-hidden rounded-lg border border-border;
+}
+.root :global(thead) {
+  @apply bg-surface;
 }
 .root :global(th) {
-  @apply bg-surface-input px-4 py-2 text-left text-[13px] font-semibold text-text-primary;
+  @apply px-4 py-2.5 text-left text-[13px] font-semibold text-text-primary border-b border-border;
 }
 .root :global(td) {
-  @apply border-t border-border px-4 py-2 text-[13px] text-text-secondary;
+  @apply border-t border-border px-4 py-2.5 text-[13px] text-text-secondary;
+}
+.root :global(tbody tr) {
+  @apply transition-colors duration-150;
+}
+.root :global(tbody tr:hover) {
+  background: color-mix(in srgb, var(--color-surface-input) 40%, transparent);
+}
+
+/* ---- Images ---- */
+.root :global(img) {
+  @apply max-w-full h-auto rounded-xl my-3;
 }
 </style>

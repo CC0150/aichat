@@ -11,7 +11,7 @@ const props = defineProps({
   showRenameModal: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['closeRenameModal', 'sendMessage'])
+const emit = defineEmits(['closeRenameModal', 'sendMessage', 'continueGenerate'])
 
 const chatStore = useChatStore()
 const appStore = useAppStore()
@@ -46,7 +46,6 @@ watch(() => props.showRenameModal, (newValue) => {
 })
 
 const isEmpty = computed(() => chatStore.currentMessages.length === 0)
-const userName = '下雨天'
 
 const virtualMessages = computed(() =>
   chatStore.currentMessages.map((m, index) => ({
@@ -56,10 +55,10 @@ const virtualMessages = computed(() =>
 )
 
 const suggestions = [
-  { label: '写一份周报', icon: 'lucide:align-left', color: 'text-indigo-500', bg: 'bg-indigo-500/8' },
-  { label: '解释一个概念', icon: 'lucide:lightbulb', color: 'text-sky-500', bg: 'bg-sky-500/8' },
-  { label: '写一段代码', icon: 'lucide:braces', color: 'text-violet-500', bg: 'bg-violet-500/8' },
-  { label: '起草一封邮件', icon: 'lucide:mail', color: 'text-emerald-500', bg: 'bg-emerald-500/8' },
+  { label: '解释 JavaScript 闭包原理', icon: 'lucide:box' },
+  { label: '手写一个防抖 debounce 函数', icon: 'lucide:code-2' },
+  { label: 'Vue 3 响应式原理是什么', icon: 'lucide:layers' },
+  { label: '前端性能优化有哪些方法', icon: 'lucide:zap' },
 ]
 
 function onSuggest(s) {
@@ -304,41 +303,56 @@ onUnmounted(() => {
   <div class="relative flex flex-1 flex-col overflow-hidden">
     <!-- ===== Empty State ===== -->
     <template v-if="isEmpty">
-      <div class="flex flex-1 flex-col items-center justify-center px-4">
-        <!-- Greeting -->
-        <div class="text-center">
-          <h2 class="text-[28px] font-semibold tracking-tight text-text-primary leading-tight">
-            {{ userName }}，你好
-          </h2>
-          <p class="mt-3 text-[15px] text-text-muted leading-relaxed">
-            今天想聊什么？
-          </p>
+      <div class="relative flex flex-1 flex-col items-center justify-center px-6">
+
+        <!-- Ambient atmosphere -->
+        <div class="absolute inset-0 pointer-events-none">
+          <div class="absolute top-0 right-0 w-[400px] h-[400px] rounded-full bg-indigo-500/[0.04] blur-3xl animate-breath" />
+          <div class="absolute bottom-0 left-0 w-[300px] h-[300px] rounded-full bg-violet-500/[0.03] blur-3xl animate-breath" style="animation-delay: -4s" />
         </div>
 
-        <!-- Thin accent divider -->
-        <div class="mt-8 h-px w-12 rounded-full bg-primary/40" />
+        <!-- Content -->
+        <div class="relative w-full max-w-lg">
 
-        <!-- Suggestion pills -->
-        <div class="mt-8 flex max-w-lg flex-wrap justify-center gap-3">
-          <button
-            v-for="(s, i) in suggestions"
-            :key="s.label"
-            type="button"
-            class="group flex items-center gap-2.5 rounded-xl px-5 py-3 text-sm font-medium transition-all duration-300"
-            :class="[s.bg, s.color]"
-            :style="{ animationDelay: `${i * 80}ms` }"
-            @click="onSuggest(s)"
-          >
-            <Icon
-              :icon="s.icon"
-              class="h-[18px] w-[18px] shrink-0 opacity-70 transition-all duration-300 group-hover:opacity-100 group-hover:scale-110"
-            />
-            <span class="opacity-80 transition-opacity duration-300 group-hover:opacity-100">{{ s.label }}</span>
-            <Icon
-              icon="lucide:arrow-right"
-              class="h-3.5 w-3.5 shrink-0 opacity-0 -translate-x-2 transition-all duration-300 group-hover:opacity-60 group-hover:translate-x-0"
-            />
-          </button>
+          <!-- Headline group -->
+          <div class="mb-6">
+            <div class="flex items-center gap-2 mb-2">
+              <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-muted/80 backdrop-blur-sm ring-1 ring-primary/10">
+                <svg width="14" height="14" viewBox="0 0 40 40" fill="none">
+                  <rect x="3" y="3" width="34" height="34" rx="8.5" class="fill-primary" />
+                  <path d="M20 9L22 18L31 20L22 22L20 31L18 22L9 20L18 18Z" class="fill-primary-muted" />
+                </svg>
+              </div>
+              <span class="text-[11px] font-medium text-text-muted tracking-widest uppercase">AI Assistant for Frontend</span>
+            </div>
+            <h2 class="text-2xl font-semibold tracking-tight text-text-primary leading-[1.25]">
+              你好<span class="text-text-muted">，随时提问</span>
+            </h2>
+            <p class="mt-1.5 text-sm text-text-muted/70">
+              随时解答前端技术问题，模拟真实面试场景
+            </p>
+          </div>
+
+          <!-- Suggestion grid — 2 cols x 2 rows -->
+          <div class="grid grid-cols-2 gap-2.5">
+            <button
+              v-for="(s, i) in suggestions"
+              :key="s.label"
+              type="button"
+              class="suggestion-card group relative w-full rounded-xl border border-border/50 bg-surface-elevated/60 backdrop-blur-sm px-3.5 py-3 text-left transition-all duration-500 hover:bg-surface-elevated hover:border-primary/25 hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5"
+              :style="{ animationDelay: `${i * 70}ms` }"
+              @click="onSuggest(s)"
+            >
+              <div class="flex items-center gap-2.5">
+                <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface-input/70 transition-colors duration-500 group-hover:bg-primary-muted/50">
+                  <Icon :icon="s.icon" class="h-[14px] w-[14px] text-text-muted transition-colors duration-500 group-hover:text-primary" />
+                </div>
+                <span class="text-[13px] font-medium text-text-secondary transition-colors duration-500 group-hover:text-text-primary">
+                  {{ s.label }}
+                </span>
+              </div>
+            </button>
+          </div>
         </div>
       </div>
     </template>
@@ -347,7 +361,7 @@ onUnmounted(() => {
     <template v-else>
       <DynamicScroller
         ref="scrollerRef"
-        class="flex-1 overflow-y-auto px-4 py-6 no-scrollbar"
+        class="flex-1 overflow-y-auto px-2 sm:px-4 py-4 sm:py-6 no-scrollbar"
         :items="virtualMessages"
         :min-item-size="50"
         key-field="id"
@@ -360,9 +374,9 @@ onUnmounted(() => {
               :class="item.role === 'user' ? 'flex justify-end' : ''"
             >
               <!-- User message -->
-              <div v-if="item.role === 'user'" class="flex items-start gap-2 max-w-[85%]">
-                <!-- Action buttons (left side) -->
-                <div class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-200 group-hover/message:opacity-100">
+              <div v-if="item.role === 'user'" class="flex items-start gap-1.5 sm:gap-2 max-w-[92%] sm:max-w-[85%]">
+                <!-- Action buttons (left, hidden on mobile) -->
+                <div class="hidden sm:flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-200 group-hover/message:opacity-100">
                   <button
                     type="button"
                     class="rounded-md p-1.5 text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary"
@@ -390,7 +404,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Bubble -->
-                <div class="rounded-2xl rounded-br-md bg-primary px-4 py-2.5 shadow-sm max-w-full">
+                <div class="min-w-0 rounded-2xl rounded-br-md bg-primary px-3 sm:px-4 py-2 sm:py-2.5 shadow-sm">
                   <div v-if="getUserImages(item).length" class="mb-2 flex flex-wrap gap-2">
                     <div
                       v-for="img in getUserImages(item)"
@@ -401,7 +415,7 @@ onUnmounted(() => {
                       <img :src="img.url" :alt="img.name || 'Image'" class="h-full w-full object-cover" />
                     </div>
                   </div>
-                  <p v-if="getUserText(item)" class="whitespace-pre-wrap break-words text-sm leading-relaxed text-white">
+                  <p v-if="getUserText(item)" class="whitespace-pre-wrap break-words text-[13px] sm:text-sm leading-relaxed text-white">
                     {{ getUserText(item) }}
                   </p>
                   <p v-else-if="getUserImages(item).length" class="text-xs text-white/80">
@@ -410,21 +424,21 @@ onUnmounted(() => {
                 </div>
 
                 <!-- User avatar -->
-                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-muted ring-1 ring-primary-muted">
-                  <Icon icon="lucide:circle-user" class="h-[15px] w-[15px] text-primary" />
+                <div class="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-full bg-primary-muted ring-1 ring-primary-muted">
+                  <Icon icon="lucide:circle-user" class="h-3.5 w-3.5 sm:h-[15px] sm:w-[15px] text-primary" />
                 </div>
               </div>
 
               <!-- AI message -->
-              <div v-else class="max-w-[85%]">
-                <div class="flex items-start gap-3">
+              <div v-else class="max-w-[92%] sm:max-w-[85%]">
+                <div class="flex items-start gap-2 sm:gap-3">
                   <!-- AI avatar -->
-                  <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-muted ring-1 ring-primary-muted">
-                    <Icon icon="lucide:bot" class="h-[15px] w-[15px] text-primary" />
+                  <div class="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-full bg-primary-muted ring-1 ring-primary-muted">
+                    <Icon icon="lucide:bot" class="h-3.5 w-3.5 sm:h-[15px] sm:w-[15px] text-primary" />
                   </div>
 
                   <!-- AI bubble -->
-                  <div class="rounded-2xl rounded-bl-md bg-surface-elevated px-4 py-3 shadow-sm ring-1 ring-border flex-1">
+                  <div class="min-w-0 rounded-2xl rounded-bl-md bg-surface-elevated px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm ring-1 ring-border">
                     <div v-if="item.content && item.content.trim().length">
                       <MarkdownContent :content="item.content" />
                     </div>
@@ -441,7 +455,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- AI action buttons -->
-                <div class="flex justify-end gap-0.5 mt-1.5 ml-11 opacity-0 transition-opacity duration-200 group-hover/message:opacity-100">
+                <div class="hidden sm:flex justify-end gap-0.5 mt-1.5 ml-11 opacity-0 transition-opacity duration-200 group-hover/message:opacity-100">
                   <button
                     type="button"
                     class="rounded-md p-1.5 text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary"
@@ -467,6 +481,21 @@ onUnmounted(() => {
                     @click="deleteTurnFromAssistant(index)"
                   >
                     <Icon icon="lucide:trash-2" class="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                <!-- 继续生成按钮 -->
+                <div
+                  v-if="index === chatStore.currentMessages.length - 1 && chatStore.lastInterruptedChatId === chatStore.currentChatId"
+                  class="mt-2 ml-11"
+                >
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary transition-all duration-200 hover:bg-primary/10 hover:border-primary/50"
+                    @click="emit('continueGenerate')"
+                  >
+                    <Icon icon="lucide:play" class="h-3.5 w-3.5" />
+                    继续生成
                   </button>
                 </div>
               </div>
@@ -545,3 +574,49 @@ onUnmounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.thin-scrollbar::-webkit-scrollbar { width: 4px; }
+.thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.thin-scrollbar::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; transition: background 0.3s; }
+.thin-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); }
+.thin-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.5); }
+.thin-scrollbar { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+
+/* Ambient breathing gradient */
+@keyframes breath {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+.animate-breath {
+  animation: breath 8s ease-in-out infinite;
+}
+
+/* Staggered entrance for suggestion cards */
+@keyframes cardEnter {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.suggestion-card {
+  animation: cardEnter 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* Frosted card inner highlight */
+.suggestion-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 50%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.5s;
+}
+.suggestion-card:hover::before {
+  opacity: 1;
+}
+</style>

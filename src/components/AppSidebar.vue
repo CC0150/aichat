@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
@@ -8,6 +8,7 @@ import Logo from './Logo.vue'
 import Modal from './Modal.vue'
 
 const router = useRouter()
+const route = useRoute()
 const appStore = useAppStore()
 const chatStore = useChatStore()
 
@@ -21,6 +22,16 @@ const deletingChatId = ref(null)
 function goNewChat() {
   chatStore.setCurrentChat(null)
   router.push({ name: 'Chat' })
+  appStore.closeSidebar()
+}
+
+function goInterview() {
+  router.push({ name: 'Interview' })
+  appStore.closeSidebar()
+}
+
+function goStats() {
+  router.push({ name: 'Stats' })
   appStore.closeSidebar()
 }
 
@@ -112,6 +123,40 @@ function closeDeleteModal() {
       </button>
     </div>
 
+    <!-- 功能导航 -->
+    <div class="border-b border-border p-2">
+      <button
+        type="button"
+        class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all duration-200"
+        :class="route.name === 'Interview'
+          ? 'bg-primary-muted text-primary'
+          : 'text-text-secondary hover:bg-surface-input hover:text-text-primary'"
+        @click="goInterview"
+      >
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+          :class="route.name === 'Interview' ? 'bg-primary-muted text-primary' : 'bg-surface-input text-text-secondary'"
+        >
+          <Icon icon="lucide:presentation" class="h-[18px] w-[18px]" />
+        </span>
+        <span v-if="!appStore.sidebarCollapsed" class="truncate text-sm font-medium">面试教练</span>
+      </button>
+      <button
+        type="button"
+        class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all duration-200"
+        :class="route.name === 'Stats'
+          ? 'bg-primary-muted text-primary'
+          : 'text-text-secondary hover:bg-surface-input hover:text-text-primary'"
+        @click="goStats"
+      >
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+          :class="route.name === 'Stats' ? 'bg-primary-muted text-primary' : 'bg-surface-input text-text-secondary'"
+        >
+          <Icon icon="lucide:bar-chart-3" class="h-[18px] w-[18px]" />
+        </span>
+        <span v-if="!appStore.sidebarCollapsed" class="truncate text-sm font-medium">学习统计</span>
+      </button>
+    </div>
+
     <!-- Chat history -->
     <nav v-if="!appStore.sidebarCollapsed" class="flex-1 overflow-y-auto p-2">
       <ul class="space-y-0.5">
@@ -160,6 +205,26 @@ function closeDeleteModal() {
         </li>
       </ul>
     </nav>
+
+    <!-- Theme toggle -->
+    <div class="shrink-0 border-t border-border p-2">
+      <button
+        type="button"
+        class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-text-secondary transition-all duration-200 hover:bg-surface-input hover:text-text-primary"
+        :aria-label="appStore.isDark ? '切换为日间模式' : '切换为夜间模式'"
+        v-tooltip="appStore.isDark ? '切换为日间模式' : '切换为夜间模式'"
+        @click="appStore.toggleTheme()"
+      >
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-input text-text-secondary">
+          <Icon v-if="appStore.isDark" icon="lucide:sun" class="h-[18px] w-[18px]" />
+          <Icon v-else icon="lucide:moon" class="h-[18px] w-[18px]" />
+        </span>
+        <span
+          v-if="!appStore.sidebarCollapsed"
+          class="truncate text-sm font-medium"
+        >{{ appStore.isDark ? '日间模式' : '夜间模式' }}</span>
+      </button>
+    </div>
 
     <!-- Rename modal -->
     <Modal

@@ -1,4 +1,4 @@
-const CHAT_API_URL = "http://localhost:8787/api/chat";
+const CHAT_API_URL = "/api/chat";
 
 /**
  * 流式请求后端 Chat 补全
