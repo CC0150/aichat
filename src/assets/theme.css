@@ -1,110 +1,121 @@
 /**
- * 主题颜色变量 - 支持深色模式 (Dark Mode)
- * 在 html 上添加 class="dark" 即可切换深色模式
+ * Theme — Frosted Indigo
+ * Cool slate neutrals with a restrained indigo accent.
+ * Calm, focused, architectural — like frosted glass on a winter morning.
  */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  /* 浅色模式 */
-  --color-background: #ffffff;
-  --color-surface: #f5f5f5;
-  --color-surface-elevated: #fafafa;
-  --color-surface-input: #f0f0f0;
-  --color-primary: #1a73e8;
-  --color-primary-muted: #e8f0fe;
-  --color-border: #e0e0e0;
-  --color-text-primary: #202124;
-  --color-text-secondary: #5f6368;
-  --color-text-muted: #80868b;
+  /* Light — cool mist */
+  --color-background: #f8fafc;
+  --color-surface: #f1f5f9;
+  --color-surface-elevated: #ffffff;
+  --color-surface-input: #e2e8f0;
+  --color-primary: #4338ca;
+  --color-primary-muted: #e0e7ff;
+  --color-border: #cbd5e1;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-muted: #94a3b8;
 
-  /* 侧边栏宽度 */
+  /* Sidebar widths */
   --sidebar-width: 280px;
   --sidebar-collapsed-width: 72px;
 }
 
 .dark,
 html.dark {
-  --color-background: #000000;
-  --color-surface: #1e1e1e;
-  --color-surface-elevated: #2d2d2d;
-  --color-surface-input: #3c3c3c;
-  --color-primary: #8ab4f8;
-  --color-primary-muted: #2d3748;
-  --color-border: #3c3c3c;
-  --color-text-primary: #e8eaed;
-  --color-text-secondary: #9aa0a6;
-  --color-text-muted: #80868b;
+  --color-background: #020617;
+  --color-surface: #0f172a;
+  --color-surface-elevated: #1e293b;
+  --color-surface-input: #334155;
+  --color-primary: #818cf8;
+  --color-primary-muted: #1e1b4b;
+  --color-border: #334155;
+  --color-text-primary: #e2e8f0;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
 }
 
-/* 基础样式 */
+/* Base */
 body {
   @apply antialiased;
   background-color: var(--color-background);
   color: var(--color-text-primary);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
-/* 隐藏滚动条但保留滚动行为 */
+/* Hide scrollbar but keep scroll */
 .no-scrollbar::-webkit-scrollbar {
   width: 0;
   height: 0;
 }
-
 .no-scrollbar {
-  -ms-overflow-style: none; /* IE 和旧 Edge */
-  scrollbar-width: none;    /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
-/* floating-vue tooltip 主题覆盖 - 适配深浅色模式 */
+/* floating-vue tooltip */
 .v-popper--theme-tooltip .v-popper__inner {
-  @apply rounded-lg px-2.5 py-1.5 text-xs shadow-lg bg-surface-elevated text-text-primary border border-border;
+  @apply rounded-lg px-2.5 py-1.5 text-xs shadow-lg;
+  background-color: var(--color-surface-elevated);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
 }
-
 .v-popper--theme-tooltip .v-popper__arrow-inner {
   border-color: var(--color-surface-elevated) !important;
 }
-
 .v-popper--theme-tooltip .v-popper__arrow-outer {
   border-color: var(--color-border) !important;
 }
 
-/* 附件标签 TransitionGroup：淡入并向左滑入 */
+/* Attachment chips — slide in */
 .attachment-slide-enter-active,
 .attachment-slide-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
-
 .attachment-slide-enter-from {
   opacity: 0;
   transform: translateX(12px);
 }
-
 .attachment-slide-leave-to {
   opacity: 0;
   transform: translateX(-8px);
 }
-
 .attachment-slide-move {
-  transition: transform 0.2s ease;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 图片缩略图 TransitionGroup：淡入并向左滑入 */
+/* Image thumbnails — slide in */
 .image-slide-enter-active,
 .image-slide-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
-
 .image-slide-enter-from {
   opacity: 0;
   transform: translateX(12px);
 }
-
 .image-slide-leave-to {
   opacity: 0;
   transform: translateX(-8px);
 }
-
 .image-slide-move {
-  transition: transform 0.2s ease;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Message entrance animation */
+.message-enter-active {
+  transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1), transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.message-enter-from {
+  opacity: 0;
+  transform: translateY(12px) scale(0.98);
+}
+
+/* Spring sidebar transition */
+.sidebar-transition {
+  transition: width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+              transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }

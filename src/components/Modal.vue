@@ -2,25 +2,13 @@
 import { ref, watch } from 'vue'
 
 const props = defineProps({
-  show: {
-    type: Boolean,
-    default: false
-  },
-  title: {
-    type: String,
-    default: ''
-  },
-  confirmText: {
-    type: String,
-    default: '确定'
-  },
-  cancelText: {
-    type: String,
-    default: '取消'
-  },
+  show: { type: Boolean, default: false },
+  title: { type: String, default: '' },
+  confirmText: { type: String, default: '确定' },
+  cancelText: { type: String, default: '取消' },
   confirmVariant: {
     type: String,
-    default: 'primary', // primary, danger
+    default: 'primary',
     validator: (value) => ['primary', 'danger'].includes(value)
   }
 })
@@ -36,44 +24,72 @@ function handleConfirm() {
 }
 
 function handleBackdropClick(e) {
-  if (e.target === e.currentTarget) {
-    handleClose()
-  }
+  if (e.target === e.currentTarget) handleClose()
 }
 </script>
 
 <template>
-  <!-- 使用 Teleport 始终挂载到 body，保证模态框居中在整个屏幕，而不是某个局部容器（例如侧边栏） -->
   <Teleport to="body">
-    <div 
-      v-if="show" 
-      class="fixed inset-0 z-[1000] flex items-center justify-center bg-black/20 backdrop-blur-sm"
-      @click="handleBackdropClick"
-    >
-      <div class="mx-auto w-full max-w-md rounded-2xl bg-surface-elevated p-6 shadow-xl">
-        <h3 v-if="title" class="mb-4 text-lg font-medium text-text-primary">{{ title }}</h3>
-        <slot></slot>
-        <div class="mt-4 flex justify-end gap-3">
-          <button
-            type="button"
-            class="rounded-lg px-4 py-2 text-text-secondary hover:bg-surface-elevated hover:text-text-primary transition-colors duration-150"
-            @click="handleClose"
-          >
-            {{ cancelText }}
-          </button>
-          <button
-            type="button"
-            class="rounded-lg px-4 py-2 text-white transition-colors duration-150"
-            :class="{
-              'bg-primary hover:bg-primary/90': confirmVariant === 'primary',
-              'bg-red-500 hover:bg-red-500/90': confirmVariant === 'danger'
-            }"
-            @click="handleConfirm"
-          >
-            {{ confirmText }}
-          </button>
+    <Transition name="modal">
+      <div
+        v-if="show"
+        class="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm"
+        @click="handleBackdropClick"
+      >
+        <div class="mx-4 w-full max-w-md rounded-2xl border border-border bg-surface-elevated p-6 shadow-xl">
+          <h3 v-if="title" class="mb-4 text-base font-semibold tracking-tight text-text-primary">{{ title }}</h3>
+          <slot />
+          <div class="mt-5 flex justify-end gap-3">
+            <button
+              type="button"
+              class="rounded-lg px-4 py-2 text-[13px] font-medium text-text-secondary transition-all duration-200 hover:bg-surface-input hover:text-text-primary"
+              @click="handleClose"
+            >
+              {{ cancelText }}
+            </button>
+            <button
+              type="button"
+              class="rounded-lg px-4 py-2 text-[13px] font-medium text-white transition-all duration-200"
+              :class="{
+                'bg-primary shadow-sm hover:brightness-110 hover:shadow-md': confirmVariant === 'primary',
+                'bg-red-500 shadow-sm shadow-red-500/20 hover:bg-red-500/90 hover:shadow-md hover:shadow-red-500/20': confirmVariant === 'danger'
+              }"
+              @click="handleConfirm"
+            >
+              {{ confirmText }}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </Transition>
   </Teleport>
 </template>
+
+<style scoped>
+.modal-enter-active {
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.modal-enter-active > :not(style) {
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.modal-leave-active {
+  transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.modal-leave-active > :not(style) {
+  transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+.modal-enter-from > :not(style) {
+  opacity: 0;
+  transform: scale(0.96) translateY(8px);
+}
+.modal-leave-to > :not(style) {
+  opacity: 0;
+  transform: scale(0.98);
+}
+</style>

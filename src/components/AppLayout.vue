@@ -15,20 +15,20 @@ const showOverlay = computed(() => appStore.sidebarOpen)
 
 <template>
   <div class="flex h-screen overflow-hidden bg-background text-text-primary">
-    <!-- 移动端遮罩 -->
-    <Transition name="fade">
+    <!-- Mobile overlay -->
+    <Transition name="overlay">
       <button
         v-if="showOverlay"
         type="button"
-        class="fixed inset-0 z-40 bg-black/50 lg:hidden"
-        aria-label="关闭侧边栏"
+        class="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm lg:hidden"
+        aria-label="Close sidebar"
         @click="appStore.closeSidebar"
       />
     </Transition>
 
-    <!-- 侧边栏：桌面端固定宽度，移动端抽屉 -->
+    <!-- Sidebar: fixed on mobile, relative on desktop -->
     <aside
-      class="fixed left-0 top-0 z-50 flex h-full flex-col border-r border-border bg-surface transition-all duration-300 lg:relative lg:z-auto"
+      class="sidebar-transition fixed left-0 top-0 z-50 flex h-full flex-col border-r border-border bg-surface lg:relative lg:z-auto"
       :class="[
         sidebarWidthClass,
         appStore.sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
@@ -37,10 +37,10 @@ const showOverlay = computed(() => appStore.sidebarOpen)
       <AppSidebar />
     </aside>
 
-    <!-- 主内容区 -->
+    <!-- Main content -->
     <main class="flex min-w-0 flex-1 flex-col">
       <router-view v-slot="{ Component }">
-        <transition name="fade" mode="out-in">
+        <transition name="page" mode="out-in">
           <component :is="Component" />
         </transition>
       </router-view>
@@ -49,12 +49,25 @@ const showOverlay = computed(() => appStore.sidebarOpen)
 </template>
 
 <style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
+.overlay-enter-active {
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.fade-enter-from,
-.fade-leave-to {
+.overlay-leave-active {
+  transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.overlay-enter-from,
+.overlay-leave-to {
+  opacity: 0;
+}
+
+.page-enter-active {
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.page-leave-active {
+  transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.page-enter-from,
+.page-leave-to {
   opacity: 0;
 }
 </style>

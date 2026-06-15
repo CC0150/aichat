@@ -8,32 +8,25 @@ import MarkdownContent from './MarkdownContent.vue'
 import Modal from './Modal.vue'
 
 const props = defineProps({
-  showRenameModal: {
-    type: Boolean,
-    default: false
-  }
+  showRenameModal: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['closeRenameModal', 'sendMessage'])
 
 const chatStore = useChatStore()
 const appStore = useAppStore()
-// 虚拟列表引用，用于滚动到底部
+
 const scrollerRef = ref(null)
-// 只有用户停留在底部附近时才自动滚动；避免流式输出时“抢滚动条”
 const shouldAutoScroll = ref(true)
 const AUTO_SCROLL_THRESHOLD_PX = 120
 
-// 编辑消息相关
 const isEditModalOpen = ref(false)
 const editingMessageIndex = ref(null)
 const editingContent = ref('')
 
-// 重命名对话相关
 const isRenameModalOpen = ref(false)
 const newChatTitle = ref('')
 
-// 仅用于“重新回答”按钮的 loading 状态
 const isGenerating = ref(false)
 
 function isAbortError(err) {
@@ -44,25 +37,17 @@ function isAbortError(err) {
   )
 }
 
-// 删除模态框相关
 const isDeleteModalOpen = ref(false)
 const deletingTurnIndex = ref(null)
-const deletingTurnType = ref(null) // 'user' or 'assistant'
+const deletingTurnType = ref(null)
 
-// 监听外部传入的 showRenameModal 属性
-watch(
-  () => props.showRenameModal,
-  (newValue) => {
-    if (newValue) {
-      openRenameModal()
-    }
-  }
-)
+watch(() => props.showRenameModal, (newValue) => {
+  if (newValue) openRenameModal()
+})
 
 const isEmpty = computed(() => chatStore.currentMessages.length === 0)
 const userName = '下雨天'
 
-// 为虚拟列表提供带唯一 id 的消息数据
 const virtualMessages = computed(() =>
   chatStore.currentMessages.map((m, index) => ({
     ...m,
@@ -70,26 +55,19 @@ const virtualMessages = computed(() =>
   }))
 )
 
-// 快捷提问建议（常用高频场景）
 const suggestions = [
-  { label: '生成一份工作总结', icon: 'lucide:check-square', iconClass: 'text-emerald-400' },
-  { label: '帮我生成一首诗歌', icon: 'lucide:pen-line', iconClass: 'text-sky-400' },
-  { label: '生成一段简单的Javascript代码', icon: 'lucide:code-2', iconClass: 'text-violet-400' },
-  { label: '帮我生成一份寒假学习计划', icon: 'lucide:book-open', iconClass: 'text-amber-400' },
-  { label: '生成一份邮件', icon: 'lucide:mail', iconClass: 'text-rose-400' },
+  { label: '写一份周报', icon: 'lucide:align-left', color: 'text-indigo-500', bg: 'bg-indigo-500/8' },
+  { label: '解释一个概念', icon: 'lucide:lightbulb', color: 'text-sky-500', bg: 'bg-sky-500/8' },
+  { label: '写一段代码', icon: 'lucide:braces', color: 'text-violet-500', bg: 'bg-violet-500/8' },
+  { label: '起草一封邮件', icon: 'lucide:mail', color: 'text-emerald-500', bg: 'bg-emerald-500/8' },
 ]
 
-// 定义事件来通知父组件发送消息
-/**
- * 点击快捷提问建议时，将文案作为消息发送
- */
 function onSuggest(s) {
   emit('sendMessage', s.label)
 }
 
-let scrollRafId = null;
+let scrollRafId = null
 
-/** 执行滚动到底部的 DOM 操作（不检查 shouldAutoScroll） */
 function scrollToBottomForce() {
   if (scrollRafId) cancelAnimationFrame(scrollRafId)
   scrollRafId = requestAnimationFrame(() => {
@@ -101,7 +79,6 @@ function scrollToBottomForce() {
   })
 }
 
-/** 仅在用户位于底部附近时滚动，用于流式输出时的自动跟随 */
 function scrollToBottom() {
   nextTick(() => {
     if (!shouldAutoScroll.value) return
@@ -109,12 +86,10 @@ function scrollToBottom() {
   })
 }
 
-/** 进入对话时滚动到底部：刷新页面或切换对话后调用 */
 function scrollToBottomOnEnter() {
   shouldAutoScroll.value = true
   nextTick(() => {
     scrollToBottomForce()
-    // 虚拟列表可能稍晚才完成测量，再补一帧
     requestAnimationFrame(() => scrollToBottomForce())
   })
 }
@@ -125,18 +100,11 @@ function isNearBottom(el, thresholdPx = AUTO_SCROLL_THRESHOLD_PX) {
   return distance <= thresholdPx
 }
 
-/**
- * 监听滚动事件：
- * - 用户在底部附近：继续自动跟随新消息
- * - 用户上滑查看历史：暂停自动滚动
- */
 function onScrollerScroll(e) {
-  // vue-virtual-scroller 的 scroll 事件有时会包一层 { event }
   const el = e?.target || e?.event?.target
   shouldAutoScroll.value = isNearBottom(el)
 }
 
-// 绑定真实 DOM 的 scroll 事件（DynamicScroller 不 emit `scroll`，用 @scroll 会触发 Vue 告警）
 let boundScrollEl = null
 function bindScrollerDomScroll() {
   const el = scrollerRef.value?.$el
@@ -151,18 +119,12 @@ function bindScrollerDomScroll() {
   }
 }
 
-/**
- * 将指定文本复制到剪贴板
- */
 async function copyToClipboard(text) {
   try {
     await navigator.clipboard.writeText(text)
   } catch (_) {}
 }
 
-/**
- * 从消息中提取用户输入的纯文本
- */
 function getUserText(message) {
   const c = message?.content
   if (typeof c === 'string') return c
@@ -172,16 +134,12 @@ function getUserText(message) {
   return ''
 }
 
-/**
- * 从消息中提取关联的图片列表（用于预览）
- */
 function getUserImages(message) {
   const c = message?.content
   if (c && Array.isArray(c.images)) return c.images
   return []
 }
 
-// 图片预览
 const isImagePreviewOpen = ref(false)
 const previewImage = ref(null)
 
@@ -195,9 +153,6 @@ function closeImagePreview() {
   previewImage.value = null
 }
 
-/**
- * 由用户消息触发删除：记录下标并打开删除确认模态框
- */
 function deleteTurnFromUser(index) {
   if (!chatStore.currentChatId) return
   deletingTurnIndex.value = index
@@ -205,9 +160,6 @@ function deleteTurnFromUser(index) {
   isDeleteModalOpen.value = true
 }
 
-/**
- * 由 AI 消息触发删除：记录下标并打开删除确认模态框
- */
 function deleteTurnFromAssistant(index) {
   if (!chatStore.currentChatId) return
   deletingTurnIndex.value = index
@@ -215,107 +167,85 @@ function deleteTurnFromAssistant(index) {
   isDeleteModalOpen.value = true
 }
 
-/**
- * 确认删除：根据之前记录的下标与类型，删除对应一轮对话
- */
 function confirmDelete() {
   if (!chatStore.currentChatId || deletingTurnIndex.value === null) {
     closeDeleteModal()
     return
   }
-
   if (deletingTurnType.value === 'user') {
     chatStore.deleteTurnByUserIndex(chatStore.currentChatId, deletingTurnIndex.value)
   } else if (deletingTurnType.value === 'assistant') {
     chatStore.deleteTurnByAssistantIndex(chatStore.currentChatId, deletingTurnIndex.value)
   }
-
   closeDeleteModal()
 }
 
-/** 关闭删除确认模态框并重置状态 */
 function closeDeleteModal() {
   isDeleteModalOpen.value = false
   deletingTurnIndex.value = null
   deletingTurnType.value = null
 }
 
-/**
- * 重新生成某条 AI 回复：
- * - 找到其前一条用户消息
- * - 使用当前模型重新请求并覆盖最后一条助手消息
- */
 async function regenerate(index) {
   if (!chatStore.currentChatId || isGenerating.value) return
-
   const userMessageIndex = index - 1
   if (userMessageIndex < 0) return
-
   const userMessage = chatStore.currentMessages[userMessageIndex]
   if (!userMessage || userMessage.role !== 'user') return
 
   const controller = new AbortController()
   try {
-      isGenerating.value = true
-      const modelConfig = appStore.currentModel
+    isGenerating.value = true
+    const modelConfig = appStore.currentModel
+    chatStore.setLastAssistantMessage('')
 
-      chatStore.setLastAssistantMessage('')
-
-      await requestChatStream({
-        model: modelConfig.model,
-        messages: [{
-          role: 'user',
-          content: typeof userMessage.content === 'string'
-            ? userMessage.content
-            : (userMessage.content?.text ?? ''),
-        }],
-        onChunk: (content) => chatStore.appendToLastMessage(content),
-        onError: (msg) => chatStore.setLastAssistantMessage(`错误：${msg}`),
-        signal: controller.signal,
-      })
-    } catch (error) {
-      if (controller.signal.aborted || isAbortError(error)) return
-      console.error('API 调用失败:', error)
-      chatStore.setLastAssistantMessage(`错误：${error.message}`)
-    } finally {
-      isGenerating.value = false
-    }
+    await requestChatStream({
+      model: modelConfig.model,
+      messages: [{
+        role: 'user',
+        content: typeof userMessage.content === 'string'
+          ? userMessage.content
+          : (userMessage.content?.text ?? ''),
+      }],
+      onChunk: (content) => chatStore.appendToLastMessage(content),
+      onError: (msg) => chatStore.setLastAssistantMessage(`Error: ${msg}`),
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (controller.signal.aborted || isAbortError(error)) return
+    console.error('API error:', error)
+    chatStore.setLastAssistantMessage(`Error: ${error.message}`)
+  } finally {
+    isGenerating.value = false
+  }
 }
 
-/** 打开编辑提示词模态框，并填充当前内容 */
 function openEditModal(index, content) {
   editingMessageIndex.value = index
   editingContent.value = content
   isEditModalOpen.value = true
 }
 
-/** 关闭编辑提示词模态框并重置状态 */
 function closeEditModal() {
   isEditModalOpen.value = false
   editingMessageIndex.value = null
   editingContent.value = ''
 }
 
-/**
- * 保存编辑后的用户消息内容，并更新会话标题（如果是第一条）
- */
 function saveEditedMessage() {
   if (editingMessageIndex.value === null || !chatStore.currentChatId) {
     closeEditModal()
     return
   }
-
   const trimmedContent = editingContent.value.trim()
   if (!trimmedContent) {
     closeEditModal()
     return
   }
-
   chatStore.updateMessage(chatStore.currentChatId, editingMessageIndex.value, trimmedContent)
   closeEditModal()
 }
 
-/** 打开重命名对话模态框，并预填当前标题 */
 function openRenameModal() {
   if (chatStore.currentChat) {
     newChatTitle.value = chatStore.currentChat.title
@@ -323,61 +253,44 @@ function openRenameModal() {
   }
 }
 
-/** 关闭重命名对话模态框并清空输入 */
 function closeRenameModal() {
   isRenameModalOpen.value = false
   newChatTitle.value = ''
   emit('closeRenameModal')
 }
 
-/** 保存对话新标题到 store */
 function saveChatTitle() {
   if (!chatStore.currentChatId) {
     closeRenameModal()
     return
   }
-
   const trimmedTitle = newChatTitle.value.trim()
   if (!trimmedTitle) {
     closeRenameModal()
     return
   }
-
   chatStore.renameChat(chatStore.currentChatId, trimmedTitle)
   closeRenameModal()
 }
 
-watch(
-  () => virtualMessages.value.length,
-  () => scrollToBottom(),
-  { flush: 'post' }
-)
-// 只监听最后一条消息（极大地提升流式输出时的性能）
-watch(
-  () => {
-    const msgs = virtualMessages.value;
-    return msgs.length ? msgs[msgs.length - 1].content : '';
-  },
-  () => scrollToBottom(),
-  { flush: 'post' }
-)
+watch(() => virtualMessages.value.length, () => scrollToBottom(), { flush: 'post' })
+watch(() => {
+  const msgs = virtualMessages.value
+  return msgs.length ? msgs[msgs.length - 1].content : ''
+}, () => scrollToBottom(), { flush: 'post' })
 
-// 刷新页面或切换对话时，始终滚动到底部
 onMounted(() => {
   if (chatStore.currentMessages.length) {
     scrollToBottomOnEnter()
   }
   nextTick(() => bindScrollerDomScroll())
 })
-watch(
-  () => chatStore.currentChatId,
-  () => {
-    if (chatStore.currentMessages.length) {
-      scrollToBottomOnEnter()
-    }
-    nextTick(() => bindScrollerDomScroll())
+watch(() => chatStore.currentChatId, () => {
+  if (chatStore.currentMessages.length) {
+    scrollToBottomOnEnter()
   }
-)
+  nextTick(() => bindScrollerDomScroll())
+})
 
 onUnmounted(() => {
   if (boundScrollEl) {
@@ -389,33 +302,48 @@ onUnmounted(() => {
 
 <template>
   <div class="relative flex flex-1 flex-col overflow-hidden">
+    <!-- ===== Empty State ===== -->
     <template v-if="isEmpty">
-      <div class="flex flex-1 flex-col items-center justify-center px-4 py-8">
-        <div class="flex flex-col items-center gap-5 text-center">
-          <div class="flex items-center gap-2">
-            <span class="text-2xl font-medium text-text-primary">{{ userName }}, 你好</span>
-            <span class="inline-flex h-7 w-7 items-center justify-center">
-              <span class="flex gap-0.5">
-                <span class="h-1.5 w-1.5 rounded-sm bg-blue-400" />
-                <span class="h-1.5 w-1.5 rounded-sm bg-emerald-400" />
-                <span class="h-1.5 w-1.5 rounded-sm bg-amber-400" />
-                <span class="h-1.5 w-1.5 rounded-sm bg-rose-400" />
-              </span>
-            </span>
-          </div>
-          <p class="text-base text-text-secondary">需要我为你做些什么?</p>
+      <div class="flex flex-1 flex-col items-center justify-center px-4">
+        <!-- Greeting -->
+        <div class="text-center">
+          <h2 class="text-[28px] font-semibold tracking-tight text-text-primary leading-tight">
+            {{ userName }}，你好
+          </h2>
+          <p class="mt-3 text-[15px] text-text-muted leading-relaxed">
+            今天想聊什么？
+          </p>
         </div>
-        <!-- 快捷提问 -->
-        <div class="mt-8 flex max-w-3xl flex-wrap justify-center gap-2">
-          <button v-for="s in suggestions" :key="s.label" type="button"
-            class="flex items-center gap-1.5 rounded-full border border-border bg-surface-elevated px-4 py-2 text-sm text-text-secondary transition-colors hover:border-primary hover:bg-primary-muted hover:text-primary"
-            @click="onSuggest(s)">
-            <Icon :icon="s.icon" class="h-4 w-4 shrink-0" :class="s.iconClass" />
-            <span>{{ s.label }}</span>
+
+        <!-- Thin accent divider -->
+        <div class="mt-8 h-px w-12 rounded-full bg-primary/40" />
+
+        <!-- Suggestion pills -->
+        <div class="mt-8 flex max-w-lg flex-wrap justify-center gap-3">
+          <button
+            v-for="(s, i) in suggestions"
+            :key="s.label"
+            type="button"
+            class="group flex items-center gap-2.5 rounded-xl px-5 py-3 text-sm font-medium transition-all duration-300"
+            :class="[s.bg, s.color]"
+            :style="{ animationDelay: `${i * 80}ms` }"
+            @click="onSuggest(s)"
+          >
+            <Icon
+              :icon="s.icon"
+              class="h-[18px] w-[18px] shrink-0 opacity-70 transition-all duration-300 group-hover:opacity-100 group-hover:scale-110"
+            />
+            <span class="opacity-80 transition-opacity duration-300 group-hover:opacity-100">{{ s.label }}</span>
+            <Icon
+              icon="lucide:arrow-right"
+              class="h-3.5 w-3.5 shrink-0 opacity-0 -translate-x-2 transition-all duration-300 group-hover:opacity-60 group-hover:translate-x-0"
+            />
           </button>
         </div>
       </div>
     </template>
+
+    <!-- ===== Messages ===== -->
     <template v-else>
       <DynamicScroller
         ref="scrollerRef"
@@ -425,107 +353,120 @@ onUnmounted(() => {
         key-field="id"
         style="overflow-anchor: none;"
       >
-        <!-- vue-virtual-scroller 会在插槽参数里传入 active，必须转给 DynamicScrollerItem -->
         <template #default="{ item, index, active }">
           <DynamicScrollerItem :item="item" :index="index" :active="active">
-            <div class="mx-auto max-w-3xl group/message w-full mb-4"
-              :class="item.role === 'user' ? 'flex justify-end' : ''">
-              <!-- 用户消息 -->
+            <div
+              class="mx-auto max-w-3xl group/message mb-5"
+              :class="item.role === 'user' ? 'flex justify-end' : ''"
+            >
+              <!-- User message -->
               <div v-if="item.role === 'user'" class="flex items-start gap-2 max-w-[85%]">
-                <!-- 用户消息：左侧操作栏 -->
-                <div
-                  class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100">
-                  <button type="button"
-                    class="rounded p-1.5 text-text-muted hover:bg-surface-elevated hover:text-text-primary"
+                <!-- Action buttons (left side) -->
+                <div class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-200 group-hover/message:opacity-100">
+                  <button
+                    type="button"
+                    class="rounded-md p-1.5 text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary"
                     v-tooltip="'复制'"
-                    @click="copyToClipboard(getUserText(item))">
-                    <Icon icon="lucide:copy" class="h-4 w-4" />
+                    @click="copyToClipboard(getUserText(item))"
+                  >
+                    <Icon icon="lucide:copy" class="h-3.5 w-3.5" />
                   </button>
-                  <button type="button"
-                    class="rounded p-1.5 text-text-muted hover:bg-surface-elevated hover:text-text-primary"
+                  <button
+                    type="button"
+                    class="rounded-md p-1.5 text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary"
                     v-tooltip="'编辑提示词'"
-                    @click="openEditModal(index, getUserText(item))">
-                    <Icon icon="lucide:edit-2" class="h-4 w-4" />
+                    @click="openEditModal(index, getUserText(item))"
+                  >
+                    <Icon icon="lucide:edit-2" class="h-3.5 w-3.5" />
                   </button>
-                  <button type="button" class="rounded p-1.5 text-text-muted hover:bg-red-500/20 hover:text-red-400"
-                    v-tooltip="'删除此轮对话'" @click="deleteTurnFromUser(index)">
-                    <Icon icon="lucide:trash-2" class="h-4 w-4" />
+                  <button
+                    type="button"
+                    class="rounded-md p-1.5 text-text-muted transition-colors duration-150 hover:bg-red-500/10 hover:text-red-500"
+                    v-tooltip="'删除此轮对话'"
+                    @click="deleteTurnFromUser(index)"
+                  >
+                    <Icon icon="lucide:trash-2" class="h-3.5 w-3.5" />
                   </button>
                 </div>
-                <!-- 用户消息气泡 -->
-                <div class="rounded-2xl bg-primary text-white px-4 py-2.5 max-w-full">
-                  <!-- 图片预览 -->
-                  <div
-                    v-if="getUserImages(item).length"
-                    class="mb-2 flex flex-wrap gap-2"
-                  >
+
+                <!-- Bubble -->
+                <div class="rounded-2xl rounded-br-md bg-primary px-4 py-2.5 shadow-sm max-w-full">
+                  <div v-if="getUserImages(item).length" class="mb-2 flex flex-wrap gap-2">
                     <div
                       v-for="img in getUserImages(item)"
                       :key="img.id || img.url"
-                      class="relative h-20 w-28 overflow-hidden rounded-md border border-white/20 bg-black/10 cursor-zoom-in"
+                      class="relative h-20 w-28 overflow-hidden rounded-lg border border-white/20 bg-black/10 cursor-zoom-in transition-transform duration-200 hover:scale-[1.02]"
                       @click="openImagePreview(img)"
                     >
-                      <img
-                        :src="img.url"
-                        :alt="img.name || '已上传图片'"
-                        class="h-full w-full object-cover"
-                      />
+                      <img :src="img.url" :alt="img.name || 'Image'" class="h-full w-full object-cover" />
                     </div>
                   </div>
-                  <!-- 文本内容 -->
-                  <p
-                    v-if="getUserText(item)"
-                    class="whitespace-pre-wrap break-words text-sm"
-                  >
+                  <p v-if="getUserText(item)" class="whitespace-pre-wrap break-words text-sm leading-relaxed text-white">
                     {{ getUserText(item) }}
                   </p>
-                  <p
-                    v-else-if="getUserImages(item).length"
-                    class="text-xs text-white/80"
-                  >
+                  <p v-else-if="getUserImages(item).length" class="text-xs text-white/80">
                     已发送 {{ getUserImages(item).length }} 张图片
                   </p>
                 </div>
+
+                <!-- User avatar -->
+                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-muted ring-1 ring-primary-muted">
+                  <Icon icon="lucide:circle-user" class="h-[15px] w-[15px] text-primary" />
+                </div>
               </div>
 
-              <!-- AI 消息 -->
+              <!-- AI message -->
               <div v-else class="max-w-[85%]">
-                <div class="flex items-start gap-2">
-                  <!-- AI 头像 -->
-                  <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/20">
-                    <Icon icon="lucide:sparkles" class="h-4 w-4 text-primary" />
+                <div class="flex items-start gap-3">
+                  <!-- AI avatar -->
+                  <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-muted ring-1 ring-primary-muted">
+                    <Icon icon="lucide:bot" class="h-[15px] w-[15px] text-primary" />
                   </div>
-                  <!-- AI 消息气泡 -->
-                  <div class="rounded-2xl bg-surface-elevated text-text-primary px-4 py-2.5 flex-1">
+
+                  <!-- AI bubble -->
+                  <div class="rounded-2xl rounded-bl-md bg-surface-elevated px-4 py-3 shadow-sm ring-1 ring-border flex-1">
                     <div v-if="item.content && item.content.trim().length">
                       <MarkdownContent :content="item.content" />
                     </div>
-                    <!-- AI 正在思考中的 loading 动效 -->
-                    <div v-else class="flex items-center gap-2 text-sm text-text-muted">
-                      <span
-                        class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
-                      <span>AI 正在思考…</span>
+                    <!-- Thinking state -->
+                    <div v-else class="flex items-center gap-2 py-1 text-sm text-text-muted">
+                      <span class="flex gap-1">
+                        <span class="h-1.5 w-1.5 rounded-full bg-primary animate-bounce" style="animation-delay: 0ms" />
+                        <span class="h-1.5 w-1.5 rounded-full bg-primary animate-bounce" style="animation-delay: 150ms" />
+                        <span class="h-1.5 w-1.5 rounded-full bg-primary animate-bounce" style="animation-delay: 300ms" />
+                      </span>
+                      <span class="text-xs">AI 正在思考…</span>
                     </div>
                   </div>
                 </div>
-                <!-- AI 消息：底部操作栏 -->
-                <div class="flex justify-end gap-0.5 mt-1 opacity-0 transition-opacity group-hover/message:opacity-100">
-                  <button type="button"
-                    class="rounded p-1.5 text-text-muted hover:bg-surface-elevated hover:text-text-primary"
+
+                <!-- AI action buttons -->
+                <div class="flex justify-end gap-0.5 mt-1.5 ml-11 opacity-0 transition-opacity duration-200 group-hover/message:opacity-100">
+                  <button
+                    type="button"
+                    class="rounded-md p-1.5 text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary"
                     v-tooltip="'复制'"
-                    @click="copyToClipboard(item.content)">
-                    <Icon icon="lucide:copy" class="h-4 w-4" />
+                    @click="copyToClipboard(item.content)"
+                  >
+                    <Icon icon="lucide:copy" class="h-3.5 w-3.5" />
                   </button>
-                  <button type="button"
-                    class="rounded p-1.5 text-text-muted hover:bg-surface-elevated hover:text-text-primary disabled:opacity-50 disabled:pointer-events-none"
-                    v-tooltip="'重新回答'" @click="regenerate(index)" :disabled="isGenerating">
-                    <Icon v-if="!isGenerating" icon="lucide:refresh-cw" class="h-4 w-4" />
-                    <span v-else
-                      class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+                  <button
+                    type="button"
+                    class="rounded-md p-1.5 text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary disabled:opacity-40 disabled:pointer-events-none"
+                    v-tooltip="'重新回答'"
+                    @click="regenerate(index)"
+                    :disabled="isGenerating"
+                  >
+                    <Icon v-if="!isGenerating" icon="lucide:refresh-cw" class="h-3.5 w-3.5" />
+                    <span v-else class="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
                   </button>
-                  <button type="button" class="rounded p-1.5 text-text-muted hover:bg-red-500/20 hover:text-red-400"
-                    v-tooltip="'删除此轮对话'" @click="deleteTurnFromAssistant(index)">
-                    <Icon icon="lucide:trash-2" class="h-4 w-4" />
+                  <button
+                    type="button"
+                    class="rounded-md p-1.5 text-text-muted transition-colors duration-150 hover:bg-red-500/10 hover:text-red-500"
+                    v-tooltip="'删除此轮对话'"
+                    @click="deleteTurnFromAssistant(index)"
+                  >
+                    <Icon icon="lucide:trash-2" class="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>
@@ -534,12 +475,12 @@ onUnmounted(() => {
         </template>
       </DynamicScroller>
 
-      <!-- 一键滚动到底部：用户上滑查看历史时显示 -->
+      <!-- Scroll to bottom -->
       <Transition name="fade">
         <button
           v-if="!isEmpty && !shouldAutoScroll"
           type="button"
-          class="absolute bottom-6 right-8 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface-elevated text-text-secondary shadow-lg transition-colors hover:bg-surface-input hover:text-text-primary"
+          class="absolute bottom-6 right-8 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface-elevated text-text-secondary shadow-lg transition-all duration-200 hover:bg-surface-input hover:text-text-primary hover:shadow-xl hover:scale-105"
           aria-label="滚动到最新"
           v-tooltip="'滚动到最新'"
           @click="scrollToBottomOnEnter"
@@ -549,22 +490,27 @@ onUnmounted(() => {
       </Transition>
     </template>
 
-    <!-- 编辑消息模态框 -->
+    <!-- Edit modal -->
     <Modal :show="isEditModalOpen" title="编辑提示词" confirm-text="保存" @close="closeEditModal" @confirm="saveEditedMessage">
-      <textarea v-model="editingContent"
-        class="min-h-[100px] w-full resize-none rounded-lg border border-border bg-surface-input px-4 py-3 text-text-primary placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-        placeholder="请输入新的提示词..."></textarea>
+      <textarea
+        v-model="editingContent"
+        class="min-h-[100px] w-full resize-none rounded-lg border border-border bg-surface-input px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-muted transition-colors duration-200"
+        placeholder="请输入新的提示词..."
+      />
     </Modal>
 
-    <!-- 重命名对话模态框 -->
-    <Modal :show="isRenameModalOpen" title="重命名此对话" confirm-text="重命名" @close="closeRenameModal"
-      @confirm="saveChatTitle">
-      <input v-model="newChatTitle" type="text"
-        class="w-full rounded-lg border border-border bg-surface-input px-4 py-3 text-text-primary placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-        placeholder="请输入对话标题..." maxlength="50" />
+    <!-- Rename modal -->
+    <Modal :show="isRenameModalOpen" title="重命名此对话" confirm-text="重命名" @close="closeRenameModal" @confirm="saveChatTitle">
+      <input
+        v-model="newChatTitle"
+        type="text"
+        class="w-full rounded-lg border border-border bg-surface-input px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-muted transition-colors duration-200"
+        placeholder="请输入对话标题..."
+        maxlength="50"
+      />
     </Modal>
 
-    <!-- 删除对话模态框 -->
+    <!-- Delete modal -->
     <Modal
       :show="isDeleteModalOpen"
       title="要删除这一轮对话吗？"
@@ -574,32 +520,27 @@ onUnmounted(() => {
       @close="closeDeleteModal"
       @confirm="confirmDelete"
     >
-      <p class="text-text-secondary">此操作将删除这一轮对话的提示和回答。</p>
+      <p class="text-sm text-text-secondary">此操作将删除这一轮对话的提示和回答。</p>
     </Modal>
 
-    <!-- 图片全屏预览层 -->
+    <!-- Image preview overlay -->
     <div
       v-if="isImagePreviewOpen && previewImage"
-      class="fixed inset-0 z-40 flex items-center justify-center bg-black/60"
+      class="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm"
     >
-      <!-- 点击遮罩关闭 -->
-      <div class="absolute inset-0" @click="closeImagePreview"></div>
-
-      <!-- 关闭按钮 -->
+      <div class="absolute inset-0" @click="closeImagePreview" />
       <button
         type="button"
-        class="absolute right-6 top-6 rounded-full bg-black/60 p-2 text-white hover:bg-black/60"
+        class="absolute right-6 top-6 rounded-full bg-slate-900/60 p-2 text-white/80 transition-colors hover:bg-slate-900 hover:text-white"
         aria-label="关闭预览"
         @click="closeImagePreview"
       >
-        <Icon icon="lucide:x" class="h-6 w-6" />
+        <Icon icon="lucide:x" class="h-5 w-5" />
       </button>
-
-      <!-- 大图 -->
       <img
         :src="previewImage.url"
-        :alt="previewImage.name || '图片预览'"
-        class="relative max-h-[80vh] max-w-[80vw] rounded-lg shadow-2xl"
+        :alt="previewImage.name || 'Preview'"
+        class="relative max-h-[85vh] max-w-[85vw] rounded-xl shadow-2xl"
       />
     </div>
   </div>

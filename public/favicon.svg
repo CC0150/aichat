@@ -1,0 +1,6 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Rounded square badge -->
+  <rect x="2" y="2" width="28" height="28" rx="6.5" fill="#4338ca"/>
+  <!-- Geometric spark -->
+  <path d="M16 6L18 15L27 16L18 18L16 27L14 18L5 16L14 15Z" fill="#e0e7ff"/>
+</svg>
