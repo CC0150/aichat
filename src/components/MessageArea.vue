@@ -3,12 +3,13 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
+import { isAbortError } from '@/utils'
 import { requestChatStream } from '@/utils'
 import MarkdownContent from './MarkdownContent.vue'
 import Modal from './Modal.vue'
 
 const props = defineProps({
-  showRenameModal: { type: Boolean, default: false }
+  showRenameModal: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['closeRenameModal', 'sendMessage', 'continueGenerate'])
@@ -29,21 +30,16 @@ const newChatTitle = ref('')
 
 const isGenerating = ref(false)
 
-function isAbortError(err) {
-  return (
-    err?.name === 'AbortError' ||
-    err?.code === 'ABORT_ERR' ||
-    /aborted|abort/i.test(String(err?.message || ''))
-  )
-}
-
 const isDeleteModalOpen = ref(false)
 const deletingTurnIndex = ref(null)
 const deletingTurnType = ref(null)
 
-watch(() => props.showRenameModal, (newValue) => {
-  if (newValue) openRenameModal()
-})
+watch(
+  () => props.showRenameModal,
+  (newValue) => {
+    if (newValue) openRenameModal()
+  },
+)
 
 const isEmpty = computed(() => chatStore.currentMessages.length === 0)
 
@@ -51,7 +47,7 @@ const virtualMessages = computed(() =>
   chatStore.currentMessages.map((m, index) => ({
     ...m,
     id: m.id || `${chatStore.currentChatId || 'chat'}-${index}`,
-  }))
+  })),
 )
 
 const suggestions = [
@@ -193,6 +189,8 @@ async function regenerate(index) {
   if (!userMessage || userMessage.role !== 'user') return
 
   const controller = new AbortController()
+  chatStore.setRegenerateAbort(controller)
+  chatStore.isRegenerating = true
   try {
     isGenerating.value = true
     const modelConfig = appStore.currentModel
@@ -200,12 +198,15 @@ async function regenerate(index) {
 
     await requestChatStream({
       model: modelConfig.model,
-      messages: [{
-        role: 'user',
-        content: typeof userMessage.content === 'string'
-          ? userMessage.content
-          : (userMessage.content?.text ?? ''),
-      }],
+      messages: [
+        {
+          role: 'user',
+          content:
+            typeof userMessage.content === 'string'
+              ? userMessage.content
+              : (userMessage.content?.text ?? ''),
+        },
+      ],
       onChunk: (content) => chatStore.appendToLastMessage(content),
       onError: (msg) => chatStore.setLastAssistantMessage(`Error: ${msg}`),
       signal: controller.signal,
@@ -216,6 +217,8 @@ async function regenerate(index) {
     chatStore.setLastAssistantMessage(`Error: ${error.message}`)
   } finally {
     isGenerating.value = false
+    chatStore.isRegenerating = false
+    chatStore.setRegenerateAbort(null)
   }
 }
 
@@ -272,11 +275,17 @@ function saveChatTitle() {
   closeRenameModal()
 }
 
-watch(() => virtualMessages.value.length, () => scrollToBottom(), { flush: 'post' })
-watch(() => {
-  const msgs = virtualMessages.value
-  return msgs.length ? msgs[msgs.length - 1].content : ''
-}, () => scrollToBottom(), { flush: 'post' })
+// 消息数变化或最后一条消息内容更新时（含流式输出）自动滚动到底部
+watch(
+  () => {
+    const msgs = virtualMessages.value
+    const len = msgs.length
+    const lastContent = len ? msgs[len - 1].content : ''
+    return { len, lastContent }
+  },
+  () => scrollToBottom(),
+  { flush: 'post' },
+)
 
 onMounted(() => {
   if (chatStore.currentMessages.length) {
@@ -284,12 +293,15 @@ onMounted(() => {
   }
   nextTick(() => bindScrollerDomScroll())
 })
-watch(() => chatStore.currentChatId, () => {
-  if (chatStore.currentMessages.length) {
-    scrollToBottomOnEnter()
-  }
-  nextTick(() => bindScrollerDomScroll())
-})
+watch(
+  () => chatStore.currentChatId,
+  () => {
+    if (chatStore.currentMessages.length) {
+      scrollToBottomOnEnter()
+    }
+    nextTick(() => bindScrollerDomScroll())
+  },
+)
 
 onUnmounted(() => {
   if (boundScrollEl) {
@@ -304,20 +316,25 @@ onUnmounted(() => {
     <!-- ===== Empty State ===== -->
     <template v-if="isEmpty">
       <div class="relative flex flex-1 flex-col items-center justify-center px-6">
-
         <!-- Ambient atmosphere -->
         <div class="absolute inset-0 pointer-events-none">
-          <div class="absolute top-0 right-0 w-[400px] h-[400px] rounded-full bg-indigo-500/[0.04] blur-3xl animate-breath" />
-          <div class="absolute bottom-0 left-0 w-[300px] h-[300px] rounded-full bg-violet-500/[0.03] blur-3xl animate-breath" style="animation-delay: -4s" />
+          <div
+            class="absolute top-0 right-0 w-[400px] h-[400px] rounded-full bg-indigo-500/[0.04] blur-3xl animate-breath"
+          />
+          <div
+            class="absolute bottom-0 left-0 w-[300px] h-[300px] rounded-full bg-violet-500/[0.03] blur-3xl animate-breath"
+            style="animation-delay: -4s"
+          />
         </div>
 
         <!-- Content -->
         <div class="relative w-full max-w-lg">
-
           <!-- Headline group -->
           <div class="mb-6">
             <div class="flex items-center gap-2 mb-2">
-              <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-muted/80 backdrop-blur-sm ring-1 ring-primary/10">
+              <div
+                class="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-muted/80 backdrop-blur-sm ring-1 ring-primary/10"
+              >
                 <svg width="14" height="14" viewBox="0 0 40 40" fill="none">
                   <rect x="3" y="3" width="34" height="34" rx="9" class="fill-primary" />
                   <rect x="9" y="12" width="5" height="16" rx="2.5" fill="white" />
@@ -327,7 +344,9 @@ onUnmounted(() => {
                   <circle cx="27" cy="10" r="3" class="fill-primary-muted" />
                 </svg>
               </div>
-              <span class="text-[11px] font-medium text-text-muted tracking-widest uppercase">AI-Powered Interview Copilot</span>
+              <span class="text-[11px] font-medium text-text-muted tracking-widest uppercase"
+                >AI-Powered Interview Copilot</span
+              >
             </div>
             <h2 class="text-2xl font-semibold tracking-tight text-text-primary leading-[1.25]">
               你好<span class="text-text-muted">，我是 Intervy</span>
@@ -348,10 +367,17 @@ onUnmounted(() => {
               @click="onSuggest(s)"
             >
               <div class="flex items-center gap-2.5">
-                <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface-input/70 transition-colors duration-500 group-hover:bg-primary-muted/50">
-                  <Icon :icon="s.icon" class="h-[14px] w-[14px] text-text-muted transition-colors duration-500 group-hover:text-primary" />
+                <div
+                  class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface-input/70 transition-colors duration-500 group-hover:bg-primary-muted/50"
+                >
+                  <Icon
+                    :icon="s.icon"
+                    class="h-[14px] w-[14px] text-text-muted transition-colors duration-500 group-hover:text-primary"
+                  />
                 </div>
-                <span class="text-[13px] font-medium text-text-secondary transition-colors duration-500 group-hover:text-text-primary">
+                <span
+                  class="text-[13px] font-medium text-text-secondary transition-colors duration-500 group-hover:text-text-primary"
+                >
                   {{ s.label }}
                 </span>
               </div>
@@ -366,10 +392,12 @@ onUnmounted(() => {
       <DynamicScroller
         ref="scrollerRef"
         class="flex-1 overflow-y-auto px-2 sm:px-4 py-4 sm:py-6 no-scrollbar"
+        aria-live="polite"
+        aria-label="对话内容"
         :items="virtualMessages"
         :min-item-size="50"
         key-field="id"
-        style="overflow-anchor: none;"
+        style="overflow-anchor: none"
       >
         <template #default="{ item, index, active }">
           <DynamicScrollerItem :item="item" :index="index" :active="active">
@@ -378,29 +406,37 @@ onUnmounted(() => {
               :class="item.role === 'user' ? 'flex justify-end' : ''"
             >
               <!-- User message -->
-              <div v-if="item.role === 'user'" class="flex items-start gap-1.5 sm:gap-2 max-w-[92%] sm:max-w-[85%]">
+              <div
+                v-if="item.role === 'user'"
+                class="flex items-start gap-1.5 sm:gap-2 max-w-[92%] sm:max-w-[85%]"
+              >
                 <!-- Action buttons (left, hidden on mobile) -->
-                <div class="hidden sm:flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-200 group-hover/message:opacity-100">
+                <div
+                  class="hidden sm:flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-200 group-hover/message:opacity-100"
+                >
                   <button
+                    v-tooltip="'复制'"
                     type="button"
                     class="rounded-md p-1.5 text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary"
-                    v-tooltip="'复制'"
+                    aria-label="复制消息"
                     @click="copyToClipboard(getUserText(item))"
                   >
                     <Icon icon="lucide:copy" class="h-3.5 w-3.5" />
                   </button>
                   <button
+                    v-tooltip="'编辑提示词'"
                     type="button"
                     class="rounded-md p-1.5 text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary"
-                    v-tooltip="'编辑提示词'"
+                    aria-label="编辑消息"
                     @click="openEditModal(index, getUserText(item))"
                   >
                     <Icon icon="lucide:edit-2" class="h-3.5 w-3.5" />
                   </button>
                   <button
+                    v-tooltip="'删除此轮对话'"
                     type="button"
                     class="rounded-md p-1.5 text-text-muted transition-colors duration-150 hover:bg-red-500/10 hover:text-red-500"
-                    v-tooltip="'删除此轮对话'"
+                    aria-label="删除此轮对话"
                     @click="deleteTurnFromUser(index)"
                   >
                     <Icon icon="lucide:trash-2" class="h-3.5 w-3.5" />
@@ -408,7 +444,9 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Bubble -->
-                <div class="min-w-0 rounded-2xl rounded-br-md bg-primary px-3 sm:px-4 py-2 sm:py-2.5 shadow-sm">
+                <div
+                  class="min-w-0 rounded-2xl rounded-br-md bg-primary px-3 sm:px-4 py-2 sm:py-2.5 shadow-sm"
+                >
                   <div v-if="getUserImages(item).length" class="mb-2 flex flex-wrap gap-2">
                     <div
                       v-for="img in getUserImages(item)"
@@ -416,10 +454,17 @@ onUnmounted(() => {
                       class="relative h-20 w-28 overflow-hidden rounded-lg border border-white/20 bg-black/10 cursor-zoom-in transition-transform duration-200 hover:scale-[1.02]"
                       @click="openImagePreview(img)"
                     >
-                      <img :src="img.url" :alt="img.name || 'Image'" class="h-full w-full object-cover" />
+                      <img
+                        :src="img.url"
+                        :alt="img.name || 'Image'"
+                        class="h-full w-full object-cover"
+                      />
                     </div>
                   </div>
-                  <p v-if="getUserText(item)" class="whitespace-pre-wrap break-words text-[13px] sm:text-sm leading-relaxed text-white">
+                  <p
+                    v-if="getUserText(item)"
+                    class="whitespace-pre-wrap break-words text-[13px] sm:text-sm leading-relaxed text-white"
+                  >
                     {{ getUserText(item) }}
                   </p>
                   <p v-else-if="getUserImages(item).length" class="text-xs text-white/80">
@@ -428,8 +473,13 @@ onUnmounted(() => {
                 </div>
 
                 <!-- User avatar -->
-                <div class="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-full bg-primary-muted ring-1 ring-primary-muted">
-                  <Icon icon="lucide:circle-user" class="h-3.5 w-3.5 sm:h-[15px] sm:w-[15px] text-primary" />
+                <div
+                  class="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-full bg-primary-muted ring-1 ring-primary-muted"
+                >
+                  <Icon
+                    icon="lucide:circle-user"
+                    class="h-3.5 w-3.5 sm:h-[15px] sm:w-[15px] text-primary"
+                  />
                 </div>
               </div>
 
@@ -437,21 +487,37 @@ onUnmounted(() => {
               <div v-else class="max-w-[92%] sm:max-w-[85%]">
                 <div class="flex items-start gap-2 sm:gap-3">
                   <!-- AI avatar -->
-                  <div class="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-full bg-primary-muted ring-1 ring-primary-muted">
-                    <Icon icon="lucide:bot" class="h-3.5 w-3.5 sm:h-[15px] sm:w-[15px] text-primary" />
+                  <div
+                    class="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-full bg-primary-muted ring-1 ring-primary-muted"
+                  >
+                    <Icon
+                      icon="lucide:bot"
+                      class="h-3.5 w-3.5 sm:h-[15px] sm:w-[15px] text-primary"
+                    />
                   </div>
 
                   <!-- AI bubble -->
-                  <div class="min-w-0 rounded-2xl rounded-bl-md bg-surface-elevated px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm ring-1 ring-border">
+                  <div
+                    class="min-w-0 rounded-2xl rounded-bl-md bg-surface-elevated px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm ring-1 ring-border"
+                  >
                     <div v-if="item.content && item.content.trim().length">
                       <MarkdownContent :content="item.content" />
                     </div>
                     <!-- Thinking state -->
                     <div v-else class="flex items-center gap-2 py-1 text-sm text-text-muted">
                       <span class="flex gap-1">
-                        <span class="h-1.5 w-1.5 rounded-full bg-primary animate-bounce" style="animation-delay: 0ms" />
-                        <span class="h-1.5 w-1.5 rounded-full bg-primary animate-bounce" style="animation-delay: 150ms" />
-                        <span class="h-1.5 w-1.5 rounded-full bg-primary animate-bounce" style="animation-delay: 300ms" />
+                        <span
+                          class="h-1.5 w-1.5 rounded-full bg-primary animate-bounce"
+                          style="animation-delay: 0ms"
+                        />
+                        <span
+                          class="h-1.5 w-1.5 rounded-full bg-primary animate-bounce"
+                          style="animation-delay: 150ms"
+                        />
+                        <span
+                          class="h-1.5 w-1.5 rounded-full bg-primary animate-bounce"
+                          style="animation-delay: 300ms"
+                        />
                       </span>
                       <span class="text-xs">AI 正在思考…</span>
                     </div>
@@ -459,29 +525,38 @@ onUnmounted(() => {
                 </div>
 
                 <!-- AI action buttons -->
-                <div class="hidden sm:flex justify-end gap-0.5 mt-1.5 ml-11 opacity-0 transition-opacity duration-200 group-hover/message:opacity-100">
+                <div
+                  class="hidden sm:flex justify-end gap-0.5 mt-1.5 ml-11 opacity-0 transition-opacity duration-200 group-hover/message:opacity-100"
+                >
                   <button
+                    v-tooltip="'复制'"
                     type="button"
                     class="rounded-md p-1.5 text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary"
-                    v-tooltip="'复制'"
+                    aria-label="复制回复"
                     @click="copyToClipboard(item.content)"
                   >
                     <Icon icon="lucide:copy" class="h-3.5 w-3.5" />
                   </button>
                   <button
+                    v-tooltip="isGenerating ? '停止生成' : '重新回答'"
                     type="button"
-                    class="rounded-md p-1.5 text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary disabled:opacity-40 disabled:pointer-events-none"
-                    v-tooltip="'重新回答'"
-                    @click="regenerate(index)"
-                    :disabled="isGenerating"
+                    class="rounded-md p-1.5 transition-colors duration-150"
+                    :class="
+                      isGenerating
+                        ? 'text-red-500 hover:bg-red-500/10'
+                        : 'text-text-muted hover:bg-surface-input hover:text-text-primary'
+                    "
+                    :aria-label="isGenerating ? '停止重新生成' : '重新生成回复'"
+                    @click="isGenerating ? chatStore.abortRegenerate() : regenerate(index)"
                   >
                     <Icon v-if="!isGenerating" icon="lucide:refresh-cw" class="h-3.5 w-3.5" />
-                    <span v-else class="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    <Icon v-else icon="lucide:square" class="h-3.5 w-3.5 fill-current" />
                   </button>
                   <button
+                    v-tooltip="'删除此轮对话'"
                     type="button"
                     class="rounded-md p-1.5 text-text-muted transition-colors duration-150 hover:bg-red-500/10 hover:text-red-500"
-                    v-tooltip="'删除此轮对话'"
+                    aria-label="删除此轮对话"
                     @click="deleteTurnFromAssistant(index)"
                   >
                     <Icon icon="lucide:trash-2" class="h-3.5 w-3.5" />
@@ -490,7 +565,10 @@ onUnmounted(() => {
 
                 <!-- 继续生成按钮 -->
                 <div
-                  v-if="index === chatStore.currentMessages.length - 1 && chatStore.lastInterruptedChatId === chatStore.currentChatId"
+                  v-if="
+                    index === chatStore.currentMessages.length - 1 &&
+                    chatStore.lastInterruptedChatId === chatStore.currentChatId
+                  "
                   class="mt-2 ml-11"
                 >
                   <button
@@ -512,19 +590,38 @@ onUnmounted(() => {
       <Transition name="fade">
         <button
           v-if="!isEmpty && !shouldAutoScroll"
+          v-tooltip="'滚动到最新'"
           type="button"
           class="absolute bottom-6 right-8 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface-elevated text-text-secondary shadow-lg transition-all duration-200 hover:bg-surface-input hover:text-text-primary hover:shadow-xl hover:scale-105"
           aria-label="滚动到最新"
-          v-tooltip="'滚动到最新'"
           @click="scrollToBottomOnEnter"
         >
           <Icon icon="lucide:chevron-down" class="h-5 w-5" />
         </button>
       </Transition>
+
+      <!-- Undo delete toast -->
+      <Transition name="fade">
+        <button
+          v-if="chatStore.undoState"
+          type="button"
+          class="absolute bottom-6 left-1/2 z-10 -translate-x-1/2 flex items-center gap-2 rounded-xl border border-border bg-surface-elevated px-4 py-2.5 text-sm text-text-primary shadow-lg transition-all duration-200 hover:bg-surface-input"
+          @click="chatStore.undoDelete()"
+        >
+          <Icon icon="lucide:undo-2" class="h-4 w-4 text-primary" />
+          <span>已删除，点击撤销</span>
+        </button>
+      </Transition>
     </template>
 
     <!-- Edit modal -->
-    <Modal :show="isEditModalOpen" title="编辑提示词" confirm-text="保存" @close="closeEditModal" @confirm="saveEditedMessage">
+    <Modal
+      :show="isEditModalOpen"
+      title="编辑提示词"
+      confirm-text="保存"
+      @close="closeEditModal"
+      @confirm="saveEditedMessage"
+    >
       <textarea
         v-model="editingContent"
         class="min-h-[100px] w-full resize-none rounded-lg border border-border bg-surface-input px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-muted transition-colors duration-200"
@@ -533,7 +630,13 @@ onUnmounted(() => {
     </Modal>
 
     <!-- Rename modal -->
-    <Modal :show="isRenameModalOpen" title="重命名此对话" confirm-text="重命名" @close="closeRenameModal" @confirm="saveChatTitle">
+    <Modal
+      :show="isRenameModalOpen"
+      title="重命名此对话"
+      confirm-text="重命名"
+      @close="closeRenameModal"
+      @confirm="saveChatTitle"
+    >
       <input
         v-model="newChatTitle"
         type="text"
@@ -580,17 +683,17 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.thin-scrollbar::-webkit-scrollbar { width: 4px; }
-.thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.thin-scrollbar::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; transition: background 0.3s; }
-.thin-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); }
-.thin-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.5); }
-.thin-scrollbar { scrollbar-width: thin; scrollbar-color: transparent transparent; }
-
 /* Ambient breathing gradient */
 @keyframes breath {
-  0%, 100% { opacity: 0.6; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.08); }
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
 }
 .animate-breath {
   animation: breath 8s ease-in-out infinite;
@@ -598,8 +701,14 @@ onUnmounted(() => {
 
 /* Staggered entrance for suggestion cards */
 @keyframes cardEnter {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .suggestion-card {
   animation: cardEnter 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
@@ -612,8 +721,10 @@ onUnmounted(() => {
   inset: 0;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 50%);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 50%);
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   pointer-events: none;

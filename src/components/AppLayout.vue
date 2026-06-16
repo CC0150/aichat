@@ -53,7 +53,19 @@ const showOverlay = computed(() => appStore.sidebarOpen)
     <main class="flex min-w-0 flex-1 flex-col">
       <router-view v-slot="{ Component }">
         <transition name="page" mode="out-in">
-          <component :is="Component" />
+          <Suspense>
+            <component :is="Component" />
+            <template #fallback>
+              <div class="flex h-full items-center justify-center">
+                <div class="flex items-center gap-2 text-text-muted">
+                  <span
+                    class="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"
+                  />
+                  <span class="text-sm">加载中...</span>
+                </div>
+              </div>
+            </template>
+          </Suspense>
         </transition>
       </router-view>
     </main>

@@ -12,6 +12,29 @@ import './assets/theme.css'
 const pinia = createPinia()
 pinia.use(piniaPluginPersistedstate)
 
+// Safari ITP 兼容：用 try-catch 包裹 localStorage 以避免隐私模式下抛异常
+const safeLocalStorage = {
+  getItem(key) {
+    try {
+      return localStorage.getItem(key)
+    } catch (_) {
+      return null
+    }
+  },
+  setItem(key, value) {
+    try {
+      localStorage.setItem(key, value)
+    } catch (_) {}
+  },
+  removeItem(key) {
+    try {
+      localStorage.removeItem(key)
+    } catch (_) {}
+  },
+}
+// 将安全 storage 挂到 window 上，store 的 persist.storage 可引用
+window.__safeLocalStorage__ = safeLocalStorage
+
 // 首屏根据持久化的 app 状态设置 html class，避免主题闪烁
 try {
   const raw = localStorage.getItem('app')

@@ -3,11 +3,43 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { useInterviewStore } from '@/stores/interview'
 import { Icon } from '@iconify/vue'
+import {
+  getScoreColor,
+  getScoreBg,
+  getScoreBgSolid,
+  getScoreBorder,
+  getScoreLabel,
+  difficultyMap,
+  difficultyColor,
+} from '@/utils/interviewHelpers'
 import Modal from '@/components/Modal.vue'
 
 Chart.register(...registerables)
 
 const interviewStore = useInterviewStore()
+
+function exportRecords() {
+  const records = interviewStore.history
+  const data = records.map((r) => ({
+    type: r.typeLabel || '面试',
+    date: r.date,
+    totalScore: r.totalScore,
+    questionCount: r.questions?.length || 0,
+    details:
+      r.questions?.map((q) => ({
+        question: q.question,
+        score: r.scores[q.id]?.score ?? '-',
+        feedback: r.scores[q.id]?.feedback ?? '',
+      })) || [],
+  }))
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `intervy-export-${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 const radarCanvas = ref(null)
 const barCanvas = ref(null)
@@ -33,7 +65,7 @@ const bestScore = computed(() => {
 const overallCategoryStats = computed(() => {
   const map = {}
   for (const record of interviewStore.history) {
-    for (const q of (record.questions || [])) {
+    for (const q of record.questions || []) {
       const s = record.scores[q.id]
       if (!s) continue
       if (!map[q.category]) map[q.category] = { total: 0, count: 0 }
@@ -57,11 +89,12 @@ const latestRadarData = computed(() => {
 })
 
 const sortedHistory = computed(() =>
-  [...interviewStore.history].sort((a, b) => new Date(b.finishedAt) - new Date(a.finishedAt))
+  [...interviewStore.history].sort((a, b) => new Date(b.finishedAt) - new Date(a.finishedAt)),
 )
 
-const allChecked = computed(() =>
-  sortedHistory.value.length > 0 && sortedHistory.value.every((r) => checkedIds.value.has(r.id))
+const allChecked = computed(
+  () =>
+    sortedHistory.value.length > 0 && sortedHistory.value.every((r) => checkedIds.value.has(r.id)),
 )
 
 const checkedCount = computed(() => checkedIds.value.size)
@@ -111,33 +144,6 @@ function closeDetail() {
   detailRecord.value = null
 }
 
-function getScoreColor(score) {
-  if (score >= 8) return 'text-emerald-500'
-  if (score >= 5) return 'text-amber-500'
-  return 'text-red-500'
-}
-
-function getScoreBg(score) {
-  if (score >= 8) return 'bg-emerald-500'
-  if (score >= 5) return 'bg-amber-500'
-  return 'bg-red-500'
-}
-
-function getScoreBorder(score) {
-  if (score >= 8) return 'border-emerald-500/20'
-  if (score >= 5) return 'border-amber-500/20'
-  return 'border-red-500/20'
-}
-
-function getScoreLabel(score) {
-  if (score >= 8) return '优秀'
-  if (score >= 5) return '良好'
-  return '需提升'
-}
-
-const difficultyMap = { easy: '简单', medium: '中等', hard: '困难' }
-const difficultyColor = { easy: 'bg-emerald-500/10 text-emerald-500', medium: 'bg-amber-500/10 text-amber-500', hard: 'bg-red-500/10 text-red-500' }
-
 const chartAccent = 'rgba(99, 102, 241,'
 const chartGridColor = 'rgba(148, 163, 184, 0.12)'
 
@@ -150,17 +156,19 @@ function renderRadarChart() {
     type: 'radar',
     data: {
       labels,
-      datasets: [{
-        label: '得分',
-        data,
-        backgroundColor: `${chartAccent} 0.12)`,
-        borderColor: `${chartAccent} 0.65)`,
-        borderWidth: 2,
-        pointBackgroundColor: `${chartAccent} 1)`,
-        pointBorderColor: 'transparent',
-        pointRadius: 4,
-        pointHoverRadius: 6,
-      }],
+      datasets: [
+        {
+          label: '得分',
+          data,
+          backgroundColor: `${chartAccent} 0.12)`,
+          borderColor: `${chartAccent} 0.65)`,
+          borderWidth: 2,
+          pointBackgroundColor: `${chartAccent} 1)`,
+          pointBorderColor: 'transparent',
+          pointRadius: 4,
+          pointHoverRadius: 6,
+        },
+      ],
     },
     options: {
       responsive: true,
@@ -192,19 +200,29 @@ function renderBarChart() {
     type: 'bar',
     data: {
       labels: trend.map((t) => t.date),
-      datasets: [{
-        label: '总分',
-        data: trend.map((t) => t.score),
-        backgroundColor: trend.map((t) =>
-          t.score >= 8 ? `${chartAccent} 0.55)` : t.score >= 5 ? 'rgba(245, 158, 11, 0.45)' : 'rgba(239, 68, 68, 0.4)'
-        ),
-        borderColor: trend.map((t) =>
-          t.score >= 8 ? `${chartAccent} 0.8)` : t.score >= 5 ? 'rgba(245, 158, 11, 0.7)' : 'rgba(239, 68, 68, 0.65)'
-        ),
-        borderWidth: 1,
-        borderRadius: 6,
-        borderSkipped: false,
-      }],
+      datasets: [
+        {
+          label: '总分',
+          data: trend.map((t) => t.score),
+          backgroundColor: trend.map((t) =>
+            t.score >= 8
+              ? `${chartAccent} 0.55)`
+              : t.score >= 5
+                ? 'rgba(245, 158, 11, 0.45)'
+                : 'rgba(239, 68, 68, 0.4)',
+          ),
+          borderColor: trend.map((t) =>
+            t.score >= 8
+              ? `${chartAccent} 0.8)`
+              : t.score >= 5
+                ? 'rgba(245, 158, 11, 0.7)'
+                : 'rgba(239, 68, 68, 0.65)',
+          ),
+          borderWidth: 1,
+          borderRadius: 6,
+          borderSkipped: false,
+        },
+      ],
     },
     options: {
       responsive: true,
@@ -229,14 +247,26 @@ function renderBarChart() {
 }
 
 watch(latestRadarData, () => requestAnimationFrame(renderRadarChart), { deep: true })
-watch(() => stats.value, () => requestAnimationFrame(renderBarChart), { deep: true })
-onMounted(() => { requestAnimationFrame(() => { renderRadarChart(); renderBarChart() }) })
-onUnmounted(() => { if (radarChart) radarChart.destroy(); if (barChart) barChart.destroy() })
+watch(
+  () => stats.value,
+  () => requestAnimationFrame(renderBarChart),
+  { deep: true },
+)
+onMounted(() => {
+  requestAnimationFrame(() => {
+    renderRadarChart()
+    renderBarChart()
+  })
+})
+onUnmounted(() => {
+  if (radarChart) radarChart.destroy()
+  if (barChart) barChart.destroy()
+})
 
 // 详情弹窗
 function detailCategoryStats(record) {
   const map = {}
-  for (const q of (record.questions || [])) {
+  for (const q of record.questions || []) {
     const s = record.scores[q.id]
     if (!s) continue
     if (!map[q.category]) map[q.category] = { total: 0, count: 0 }
@@ -266,10 +296,11 @@ function handleDetailBackdropClick(e) {
 <template>
   <div class="flex h-full flex-col overflow-y-auto thin-scrollbar">
     <div class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
-
       <!-- 空状态 -->
       <div v-if="!hasData" class="flex flex-col items-center justify-center py-24 text-text-muted">
-        <div class="mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-surface-elevated ring-1 ring-border">
+        <div
+          class="mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-surface-elevated ring-1 ring-border"
+        >
           <Icon icon="lucide:bar-chart-3" class="h-10 w-10 opacity-25" />
         </div>
         <p class="text-sm font-medium text-text-secondary">暂无面试记录</p>
@@ -278,44 +309,89 @@ function handleDetailBackdropClick(e) {
 
       <template v-else>
         <!-- 概览条 -->
+        <div class="mb-4 flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-text-primary">面试记录</h2>
+          <button
+            type="button"
+            class="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary"
+            @click="exportRecords"
+          >
+            <Icon icon="lucide:download" class="h-3.5 w-3.5" />
+            导出
+          </button>
+        </div>
         <div class="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4 animate-fade-up">
           <div class="stat-card rounded-2xl border border-border bg-surface-elevated p-4 sm:p-5">
-            <div class="mb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">面试次数</div>
+            <div class="mb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">
+              面试次数
+            </div>
             <div class="flex items-baseline gap-1">
-              <span class="text-2xl font-bold text-text-primary tracking-tight sm:text-3xl">{{ stats?.totalInterviews || 0 }}</span>
+              <span class="text-2xl font-bold text-text-primary tracking-tight sm:text-3xl">{{
+                stats?.totalInterviews || 0
+              }}</span>
               <span class="text-xs text-text-muted">次</span>
             </div>
             <div class="mt-3 h-1 w-full rounded-full bg-surface-input">
-              <div class="h-full rounded-full bg-primary" :style="{ width: Math.min((stats?.totalInterviews || 0) * 10, 100) + '%' }" />
+              <div
+                class="h-full rounded-full bg-primary"
+                :style="{ width: Math.min((stats?.totalInterviews || 0) * 10, 100) + '%' }"
+              />
             </div>
           </div>
 
           <div class="stat-card rounded-2xl border border-border bg-surface-elevated p-4 sm:p-5">
-            <div class="mb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">平均分</div>
+            <div class="mb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">
+              平均分
+            </div>
             <div class="flex items-baseline gap-1">
-              <span class="text-2xl font-bold tracking-tight sm:text-3xl" :class="getScoreColor(stats?.avgScore || 0)">{{ stats?.avgScore || 0 }}</span>
+              <span
+                class="text-2xl font-bold tracking-tight sm:text-3xl"
+                :class="getScoreColor(stats?.avgScore || 0)"
+                >{{ stats?.avgScore || 0 }}</span
+              >
               <span class="text-xs text-text-muted">/10</span>
             </div>
             <div class="mt-3 h-1 w-full rounded-full bg-surface-input">
-              <div class="h-full rounded-full transition-all duration-700" :class="getScoreBg(stats?.avgScore || 0)" :style="{ width: (stats?.avgScore || 0) * 10 + '%' }" />
+              <div
+                class="h-full rounded-full transition-all duration-700"
+                :class="getScoreBgSolid(stats?.avgScore || 0)"
+                :style="{ width: (stats?.avgScore || 0) * 10 + '%' }"
+              />
             </div>
           </div>
 
           <div class="stat-card rounded-2xl border border-border bg-surface-elevated p-4 sm:p-5">
-            <div class="mb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">最高分</div>
+            <div class="mb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">
+              最高分
+            </div>
             <div class="flex items-baseline gap-1">
-              <span class="text-2xl font-bold tracking-tight sm:text-3xl" :class="getScoreColor(bestScore)">{{ bestScore }}</span>
+              <span
+                class="text-2xl font-bold tracking-tight sm:text-3xl"
+                :class="getScoreColor(bestScore)"
+                >{{ bestScore }}</span
+              >
               <span class="text-xs text-text-muted">/10</span>
             </div>
             <div class="mt-3 h-1 w-full rounded-full bg-surface-input">
-              <div class="h-full rounded-full transition-all duration-700" :class="getScoreBg(bestScore)" :style="{ width: bestScore * 10 + '%' }" />
+              <div
+                class="h-full rounded-full transition-all duration-700"
+                :class="getScoreBgSolid(bestScore)"
+                :style="{ width: bestScore * 10 + '%' }"
+              />
             </div>
           </div>
 
           <div class="stat-card rounded-2xl border border-border bg-surface-elevated p-4 sm:p-5">
-            <div class="mb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">薄弱知识点</div>
+            <div class="mb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">
+              薄弱知识点
+            </div>
             <div class="flex items-baseline gap-1">
-              <span class="text-2xl font-bold tracking-tight sm:text-3xl" :class="interviewStore.weakPoints.length === 0 ? 'text-emerald-500' : 'text-amber-500'">
+              <span
+                class="text-2xl font-bold tracking-tight sm:text-3xl"
+                :class="
+                  interviewStore.weakPoints.length === 0 ? 'text-emerald-500' : 'text-amber-500'
+                "
+              >
                 {{ interviewStore.weakPoints.length }}
               </span>
               <span class="text-xs text-text-muted">项</span>
@@ -325,15 +401,18 @@ function handleDetailBackdropClick(e) {
                 v-for="wp in interviewStore.weakPoints.slice(0, 3)"
                 :key="wp.knowledgePoint"
                 class="truncate rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-500"
-              >{{ wp.knowledgePoint }}</span>
+                >{{ wp.knowledgePoint }}</span
+              >
               <span
                 v-if="interviewStore.weakPoints.length > 3"
                 class="text-[10px] text-text-muted self-center"
-              >+{{ interviewStore.weakPoints.length - 3 }}</span>
+                >+{{ interviewStore.weakPoints.length - 3 }}</span
+              >
               <span
                 v-if="interviewStore.weakPoints.length === 0"
                 class="text-[10px] text-emerald-500"
-              >全部掌握</span>
+                >全部掌握</span
+              >
             </div>
           </div>
         </div>
@@ -364,17 +443,21 @@ function handleDetailBackdropClick(e) {
                 <div class="h-2 flex-1 overflow-hidden rounded-full bg-surface-input">
                   <div
                     class="h-full rounded-full transition-all duration-700"
-                    :class="getScoreBg(score)"
+                    :class="getScoreBgSolid(score)"
                     :style="{ width: score * 10 + '%' }"
                   />
                 </div>
-                <span class="w-8 shrink-0 text-right text-xs font-semibold" :class="getScoreColor(score)">{{ score }}</span>
+                <span
+                  class="w-8 shrink-0 text-right text-xs font-semibold"
+                  :class="getScoreColor(score)"
+                  >{{ score }}</span
+                >
               </div>
-              <p class="text-[11px] text-text-muted mt-3">综合 {{ stats?.totalInterviews || 0 }} 次面试数据</p>
+              <p class="text-[11px] text-text-muted mt-3">
+                综合 {{ stats?.totalInterviews || 0 }} 次面试数据
+              </p>
             </div>
-            <p v-else class="py-8 text-center text-xs text-text-muted">
-              暂无分类数据
-            </p>
+            <p v-else class="py-8 text-center text-xs text-text-muted">暂无分类数据</p>
           </div>
         </div>
 
@@ -401,12 +484,18 @@ function handleDetailBackdropClick(e) {
                 >
                   <div
                     class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
-                    :class="getScoreBg(wp.score)"
-                  >{{ wp.score }}</div>
-                  <div class="min-w-0 flex-1">
-                    <div class="text-sm font-medium text-text-primary truncate">{{ wp.knowledgePoint }}</div>
+                    :class="getScoreBgSolid(wp.score)"
+                  >
+                    {{ wp.score }}
                   </div>
-                  <span class="shrink-0 text-[11px] font-medium" :class="getScoreColor(wp.score)">{{ getScoreLabel(wp.score) }}</span>
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm font-medium text-text-primary truncate">
+                      {{ wp.knowledgePoint }}
+                    </div>
+                  </div>
+                  <span class="shrink-0 text-[11px] font-medium" :class="getScoreColor(wp.score)">{{
+                    getScoreLabel(wp.score)
+                  }}</span>
                 </div>
               </div>
             </template>
@@ -419,12 +508,16 @@ function handleDetailBackdropClick(e) {
         </div>
 
         <!-- 面试记录 -->
-        <div class="rounded-2xl border border-border bg-surface-elevated p-5 sm:p-6 animate-fade-up stagger-4">
+        <div
+          class="rounded-2xl border border-border bg-surface-elevated p-5 sm:p-6 animate-fade-up stagger-4"
+        >
           <div class="mb-4 flex items-center justify-between">
             <h3 class="text-sm font-semibold text-text-primary">面试记录</h3>
             <div class="flex items-center gap-2">
               <template v-if="isDeleteMode">
-                <label class="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors">
+                <label
+                  class="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors"
+                >
                   <input
                     type="checkbox"
                     class="h-3.5 w-3.5 rounded border-border accent-primary"
@@ -482,19 +575,35 @@ function handleDetailBackdropClick(e) {
               <!-- 分数 -->
               <div
                 class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold text-white transition-transform duration-200 group-hover:scale-105"
-                :class="getScoreBg(record.totalScore)"
-              >{{ record.totalScore }}</div>
+                :class="getScoreBgSolid(record.totalScore)"
+              >
+                {{ record.totalScore }}
+              </div>
 
               <!-- 信息 -->
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
-                  <span class="truncate text-sm font-medium text-text-primary">{{ record.typeLabel || '面试记录' }}</span>
+                  <span class="truncate text-sm font-medium text-text-primary">{{
+                    record.typeLabel || '面试记录'
+                  }}</span>
                 </div>
-                <div class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-text-muted">
-                  <span>{{ new Date(record.finishedAt).toLocaleDateString("zh-CN", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }) }}</span>
+                <div
+                  class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-text-muted"
+                >
+                  <span>{{
+                    new Date(record.finishedAt).toLocaleDateString('zh-CN', {
+                      month: 'long',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  }}</span>
                   <span class="opacity-30 hidden sm:inline">|</span>
                   <span class="hidden sm:inline">{{ (record.questions || []).length }} 题</span>
-                  <span class="rounded-full px-1.5 py-0.5 text-[10px] font-medium" :class="getScoreColor(record.totalScore)">
+                  <span
+                    class="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                    :class="getScoreColor(record.totalScore)"
+                  >
                     {{ getScoreLabel(record.totalScore) }}
                   </span>
                 </div>
@@ -522,12 +631,25 @@ function handleDetailBackdropClick(e) {
           class="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-slate-900/40 backdrop-blur-sm py-10"
           @click="handleDetailBackdropClick"
         >
-          <div class="mx-4 my-auto w-full max-w-2xl rounded-2xl border border-border bg-surface-elevated shadow-xl">
-            <div class="flex items-center justify-between border-b border-border px-4 py-3 sm:px-6 sm:py-4">
+          <div
+            class="mx-4 my-auto w-full max-w-2xl rounded-2xl border border-border bg-surface-elevated shadow-xl"
+          >
+            <div
+              class="flex items-center justify-between border-b border-border px-4 py-3 sm:px-6 sm:py-4"
+            >
               <div>
-                <h3 class="text-base font-semibold text-text-primary">{{ detailRecord.typeLabel || '面试记录' }}</h3>
+                <h3 class="text-base font-semibold text-text-primary">
+                  {{ detailRecord.typeLabel || '面试记录' }}
+                </h3>
                 <p class="mt-0.5 text-xs text-text-muted">
-                  {{ new Date(detailRecord.finishedAt).toLocaleDateString("zh-CN", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }) }}
+                  {{
+                    new Date(detailRecord.finishedAt).toLocaleDateString('zh-CN', {
+                      month: 'long',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  }}
                   &nbsp;·&nbsp;{{ (detailRecord.questions || []).length }} 题
                 </p>
               </div>
@@ -542,17 +664,26 @@ function handleDetailBackdropClick(e) {
 
             <div class="max-h-[70vh] overflow-y-auto px-4 py-4 thin-scrollbar sm:px-6 sm:py-5">
               <div class="mb-5 flex items-center gap-4 rounded-xl bg-surface p-4">
-                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-base font-bold text-white" :class="getScoreBg(detailRecord.totalScore)">
+                <div
+                  class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-base font-bold text-white"
+                  :class="getScoreBgSolid(detailRecord.totalScore)"
+                >
                   {{ detailRecord.totalScore }}
                 </div>
                 <div>
-                  <div class="text-sm font-medium text-text-primary">总分 <span class="text-text-muted">/10</span></div>
-                  <div class="text-xs" :class="getScoreColor(detailRecord.totalScore)">{{ getScoreLabel(detailRecord.totalScore) }}</div>
+                  <div class="text-sm font-medium text-text-primary">
+                    总分 <span class="text-text-muted">/10</span>
+                  </div>
+                  <div class="text-xs" :class="getScoreColor(detailRecord.totalScore)">
+                    {{ getScoreLabel(detailRecord.totalScore) }}
+                  </div>
                 </div>
               </div>
 
               <div v-if="Object.keys(detailCategoryStats(detailRecord)).length" class="mb-5">
-                <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">分类得分</h4>
+                <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                  分类得分
+                </h4>
                 <div class="grid grid-cols-3 gap-2">
                   <div
                     v-for="(score, cat) in detailCategoryStats(detailRecord)"
@@ -560,27 +691,35 @@ function handleDetailBackdropClick(e) {
                     class="rounded-lg border border-border bg-surface-elevated p-3 text-center"
                   >
                     <div class="text-xs text-text-muted capitalize">{{ cat }}</div>
-                    <div class="mt-0.5 text-base font-semibold" :class="getScoreColor(score)">{{ score }}</div>
+                    <div class="mt-0.5 text-base font-semibold" :class="getScoreColor(score)">
+                      {{ score }}
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div v-if="detailWeakPoints(detailRecord).length" class="mb-5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+              <div
+                v-if="detailWeakPoints(detailRecord).length"
+                class="mb-5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4"
+              >
                 <h4 class="mb-2 text-xs font-semibold text-amber-500">需要加强</h4>
                 <div class="flex flex-wrap gap-1.5">
                   <span
                     v-for="wp in detailWeakPoints(detailRecord)"
                     :key="wp.knowledgePoint"
                     class="rounded-full border border-amber-500/20 bg-surface px-2.5 py-0.5 text-xs text-text-secondary"
-                  >{{ wp.knowledgePoint }}（{{ wp.score }} 分）</span>
+                    >{{ wp.knowledgePoint }}（{{ wp.score }} 分）</span
+                  >
                 </div>
               </div>
 
               <div>
-                <h4 class="mb-3 text-xs font-semibold uppercase tracking-wide text-text-muted">题目回顾</h4>
+                <h4 class="mb-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                  题目回顾
+                </h4>
                 <div class="space-y-3">
                   <div
-                    v-for="(q, idx) in (detailRecord.questions || [])"
+                    v-for="(q, idx) in detailRecord.questions || []"
                     :key="q.id"
                     class="rounded-xl border border-border bg-surface p-4"
                   >
@@ -589,13 +728,18 @@ function handleDetailBackdropClick(e) {
                       <span
                         class="rounded-full px-2 py-0.5 text-[11px] font-medium"
                         :class="difficultyColor[q.difficulty] || 'bg-surface-input text-text-muted'"
-                      >{{ difficultyMap[q.difficulty] || q.difficulty }}</span>
+                        >{{ difficultyMap[q.difficulty] || q.difficulty }}</span
+                      >
                       <span
-                        v-for="tag in (q.tags || [])"
+                        v-for="tag in q.tags || []"
                         :key="tag"
                         class="rounded-full bg-surface-input px-2 py-0.5 text-[11px] text-text-muted"
-                      >{{ tag }}</span>
-                      <span class="ml-auto text-sm font-semibold" :class="getScoreColor((detailRecord.scores[q.id] || {}).score || 0)">
+                        >{{ tag }}</span
+                      >
+                      <span
+                        class="ml-auto text-sm font-semibold"
+                        :class="getScoreColor((detailRecord.scores[q.id] || {}).score || 0)"
+                      >
                         {{ (detailRecord.scores[q.id] || {}).score ?? '-' }}/10
                       </span>
                     </div>
@@ -615,12 +759,21 @@ function handleDetailBackdropClick(e) {
                       >
                         <div
                           class="max-w-[85%] rounded-xl px-3 py-2 text-sm leading-relaxed"
-                          :class="msg.role === 'user'
-                            ? 'bg-primary/10 text-text-primary'
-                            : 'bg-surface-input text-text-secondary'"
+                          :class="
+                            msg.role === 'user'
+                              ? 'bg-primary/10 text-text-primary'
+                              : 'bg-surface-input text-text-secondary'
+                          "
                         >
-                          <span class="text-xs font-medium" :class="msg.role === 'user' ? 'text-primary' : 'text-text-muted'">
-                            {{ msg.role === 'user' ? '你' : `AI 追问 (第${Math.ceil((mi + 1) / 2)}轮)` }}
+                          <span
+                            class="text-xs font-medium"
+                            :class="msg.role === 'user' ? 'text-primary' : 'text-text-muted'"
+                          >
+                            {{
+                              msg.role === 'user'
+                                ? '你'
+                                : `AI 追问 (第${Math.ceil((mi + 1) / 2)}轮)`
+                            }}
                           </span>
                           <p class="mt-0.5 whitespace-pre-wrap">{{ msg.content }}</p>
                         </div>
@@ -628,19 +781,34 @@ function handleDetailBackdropClick(e) {
                     </div>
 
                     <!-- 普通模式的回答（无追问对话时使用） -->
-                    <div v-else-if="detailRecord.answers[q.id]" class="mt-3 rounded-lg bg-surface-input px-4 py-3">
+                    <div
+                      v-else-if="detailRecord.answers[q.id]"
+                      class="mt-3 rounded-lg bg-surface-input px-4 py-3"
+                    >
                       <div class="mb-1.5 text-[11px] font-medium text-text-muted">你的回答</div>
-                      <p class="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{{ detailRecord.answers[q.id] }}</p>
+                      <p class="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">
+                        {{ detailRecord.answers[q.id] }}
+                      </p>
                     </div>
 
-                    <div v-if="(detailRecord.scores[q.id] || {}).feedback" class="mt-3 flex items-start gap-1.5 text-xs text-text-muted">
+                    <div
+                      v-if="(detailRecord.scores[q.id] || {}).feedback"
+                      class="mt-3 flex items-start gap-1.5 text-xs text-text-muted"
+                    >
                       <Icon icon="lucide:message-circle" class="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      <span class="leading-relaxed">{{ (detailRecord.scores[q.id] || {}).feedback }}</span>
+                      <span class="leading-relaxed">{{
+                        (detailRecord.scores[q.id] || {}).feedback
+                      }}</span>
                     </div>
 
-                    <div v-if="(detailRecord.scores[q.id] || {}).improvedAnswer" class="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
+                    <div
+                      v-if="(detailRecord.scores[q.id] || {}).improvedAnswer"
+                      class="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-4 py-3"
+                    >
                       <div class="mb-1.5 text-[11px] font-medium text-emerald-500">参考回答</div>
-                      <p class="text-sm text-text-secondary leading-relaxed">{{ (detailRecord.scores[q.id] || {}).improvedAnswer }}</p>
+                      <p class="text-sm text-text-secondary leading-relaxed">
+                        {{ (detailRecord.scores[q.id] || {}).improvedAnswer }}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -662,27 +830,28 @@ function handleDetailBackdropClick(e) {
       @confirm="executeDelete"
     >
       <p class="text-sm text-text-secondary">
-        确定要删除选中的 <span class="font-semibold text-text-primary">{{ checkedCount }}</span> 条面试记录吗？此操作不可撤销。
+        确定要删除选中的
+        <span class="font-semibold text-text-primary">{{ checkedCount }}</span>
+        条面试记录吗？此操作不可撤销。
       </p>
     </Modal>
   </div>
 </template>
 
 <style scoped>
-.thin-scrollbar::-webkit-scrollbar { width: 4px; }
-.thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.thin-scrollbar::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; transition: background 0.3s; }
-.thin-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); }
-.thin-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.5); }
-.thin-scrollbar { scrollbar-width: thin; scrollbar-color: transparent transparent; }
-
 /* Entrance animations */
 .animate-fade-up {
   animation: fadeUp 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
-.stagger-2 { animation-delay: 0.08s; }
-.stagger-3 { animation-delay: 0.16s; }
-.stagger-4 { animation-delay: 0.24s; }
+.stagger-2 {
+  animation-delay: 0.08s;
+}
+.stagger-3 {
+  animation-delay: 0.16s;
+}
+.stagger-4 {
+  animation-delay: 0.24s;
+}
 
 @keyframes fadeUp {
   from {
@@ -697,7 +866,9 @@ function handleDetailBackdropClick(e) {
 
 /* Stat card micro-interaction */
 .stat-card {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 .stat-card:hover {
   transform: translateY(-2px);
@@ -709,15 +880,17 @@ function handleDetailBackdropClick(e) {
   transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .modal-enter-active > :not(style) {
-  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-              transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition:
+    opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .modal-leave-active {
   transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .modal-leave-active > :not(style) {
-  transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1),
-              transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .modal-enter-from,
 .modal-leave-to {

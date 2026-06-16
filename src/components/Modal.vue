@@ -9,8 +9,8 @@ const props = defineProps({
   confirmVariant: {
     type: String,
     default: 'primary',
-    validator: (value) => ['primary', 'danger'].includes(value)
-  }
+    validator: (value) => ['primary', 'danger'].includes(value),
+  },
 })
 
 const emit = defineEmits(['close', 'confirm'])
@@ -36,8 +36,12 @@ function handleBackdropClick(e) {
         class="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm"
         @click="handleBackdropClick"
       >
-        <div class="mx-4 w-full max-w-md rounded-2xl border border-border bg-surface-elevated p-5 shadow-xl sm:p-6">
-          <h3 v-if="title" class="mb-4 text-base font-semibold tracking-tight text-text-primary">{{ title }}</h3>
+        <div
+          class="mx-4 w-full max-w-md rounded-2xl border border-border bg-surface-elevated p-5 shadow-xl sm:p-6"
+        >
+          <h3 v-if="title" class="mb-4 text-base font-semibold tracking-tight text-text-primary">
+            {{ title }}
+          </h3>
           <slot />
           <div class="mt-5 flex justify-end gap-3">
             <button
@@ -51,8 +55,10 @@ function handleBackdropClick(e) {
               type="button"
               class="rounded-lg px-4 py-2 text-[13px] font-medium text-white transition-all duration-200"
               :class="{
-                'bg-primary shadow-sm hover:brightness-110 hover:shadow-md': confirmVariant === 'primary',
-                'bg-red-500 shadow-sm shadow-red-500/20 hover:bg-red-500/90 hover:shadow-md hover:shadow-red-500/20': confirmVariant === 'danger'
+                'bg-primary shadow-sm hover:brightness-110 hover:shadow-md':
+                  confirmVariant === 'primary',
+                'bg-red-500 shadow-sm shadow-red-500/20 hover:bg-red-500/90 hover:shadow-md hover:shadow-red-500/20':
+                  confirmVariant === 'danger',
               }"
               @click="handleConfirm"
             >
@@ -70,15 +76,17 @@ function handleBackdropClick(e) {
   transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .modal-enter-active > :not(style) {
-  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-              transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition:
+    opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .modal-leave-active {
   transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .modal-leave-active > :not(style) {
-  transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1),
-              transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .modal-enter-from,
 .modal-leave-to {

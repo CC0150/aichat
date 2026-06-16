@@ -1,9 +1,9 @@
-import htmlQuestions from "./html.js"
-import cssQuestions from "./css.js"
-import jsQuestions from "./js.js"
-import vueQuestions from "./vue.js"
-import reactQuestions from "./react.js"
-import engineeringQuestions from "./engineering.js"
+import htmlQuestions from './html.js'
+import cssQuestions from './css.js'
+import jsQuestions from './js.js'
+import vueQuestions from './vue.js'
+import reactQuestions from './react.js'
+import engineeringQuestions from './engineering.js'
 
 /** 全量题库 */
 export const allQuestions = [
@@ -27,28 +27,28 @@ export const questionsByCategory = {
 
 /** 面试类型预设 */
 export const interviewTypes = {
-  "frontend": {
-    label: "前端综合面试",
-    description: "覆盖 HTML、CSS、JS、Vue、React、工程化",
-    categories: ["html", "css", "javascript", "vue", "react", "engineering"],
+  frontend: {
+    label: '前端综合面试',
+    description: '覆盖 HTML、CSS、JS、Vue、React、工程化',
+    categories: ['html', 'css', 'javascript', 'vue', 'react', 'engineering'],
     questionCount: 10,
   },
-  "js-core": {
-    label: "JS 核心",
-    description: "JavaScript 基础、异步、原型等核心知识点",
-    categories: ["javascript"],
+  'js-core': {
+    label: 'JS 核心',
+    description: 'JavaScript 基础、异步、原型等核心知识点',
+    categories: ['javascript'],
     questionCount: 6,
   },
-  "vue-special": {
-    label: "Vue 专项",
-    description: "Vue 3 响应式、组件、性能优化",
-    categories: ["vue"],
+  'vue-special': {
+    label: 'Vue 专项',
+    description: 'Vue 3 响应式、组件、性能优化',
+    categories: ['vue'],
     questionCount: 5,
   },
-  "css-html": {
-    label: "HTML + CSS",
-    description: "布局、盒模型、响应式、语义化",
-    categories: ["html", "css"],
+  'css-html': {
+    label: 'HTML + CSS',
+    description: '布局、盒模型、响应式、语义化',
+    categories: ['html', 'css'],
     questionCount: 6,
   },
 }
@@ -61,7 +61,7 @@ export const interviewTypes = {
  * @param {string} [config.difficulty] - 难度筛选：'all' | 'easy' | 'medium' | 'hard'，默认 'all'
  * @returns {Array} 选中的题目列表（按难度由易到难排序）
  */
-export function selectQuestions({ interviewType, questionCount, difficulty = "all" }) {
+export function selectQuestions({ interviewType, questionCount, difficulty = 'all' }) {
   const typeConfig = interviewTypes[interviewType]
   if (!typeConfig) return []
 
@@ -77,22 +77,22 @@ export function selectQuestions({ interviewType, questionCount, difficulty = "al
   }
 
   // 按难度筛选
-  if (difficulty !== "all") {
+  if (difficulty !== 'all') {
     pool = pool.filter((q) => q.difficulty === difficulty)
   }
 
   if (pool.length === 0) return []
 
   // 指定难度时直接随机抽取，不再分层
-  if (difficulty !== "all") {
+  if (difficulty !== 'all') {
     const shuffled = [...pool].sort(() => Math.random() - 0.5)
     return shuffled.slice(0, Math.min(count, pool.length))
   }
 
   // 全难度时按比例分层抽取（简单 40% + 中等 40% + 困难 20%）
-  const easy = pool.filter((q) => q.difficulty === "easy")
-  const medium = pool.filter((q) => q.difficulty === "medium")
-  const hard = pool.filter((q) => q.difficulty === "hard")
+  const easy = pool.filter((q) => q.difficulty === 'easy')
+  const medium = pool.filter((q) => q.difficulty === 'medium')
+  const hard = pool.filter((q) => q.difficulty === 'hard')
 
   // 按比例分层抽取（简单 40% + 中等 40% + 困难 20%）
   const easyCount = Math.round(count * 0.4)
@@ -113,9 +113,7 @@ export function selectQuestions({ interviewType, questionCount, difficulty = "al
   // 按难度排序（easy → medium → hard），同难度随机顺序
   const difficultyOrder = { easy: 0, medium: 1, hard: 2 }
   selected.sort(
-    (a, b) =>
-      difficultyOrder[a.difficulty] - difficultyOrder[b.difficulty] ||
-      Math.random() - 0.5
+    (a, b) => difficultyOrder[a.difficulty] - difficultyOrder[b.difficulty] || Math.random() - 0.5,
   )
 
   // 如果抽取的不够（某些难度题量不足），用随机补充

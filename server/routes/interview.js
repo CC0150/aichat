@@ -1,5 +1,8 @@
 const { Router } = require("express")
-const { openai, DEFAULT_MODEL } = require("../config")
+const { DEFAULT_MODEL } = require("../config")
+const { callAI } = require("../services/aiCompletions")
+const { handleAIError } = require("../services/errorHandler")
+const { sanitizeString, clampNumber } = require("../utils/validate")
 
 const router = Router()
 
@@ -46,25 +49,16 @@ const EVALUATE_PROMPT = `你是一位资深的前端技术面试官，正在进�
 - 追问时：{"action":"follow_up","followUpQuestion":"追问内容（一句话，简洁有针对性）","scoreHint":当前估算分(1-10)}
 - 完成时：{"action":"complete","score":整数,"correctness":整数,"completeness":整数,"clarity":整数,"feedback":"50字以内的简短评价","improvedAnswer":"100字以内的自然语气参考答案"}`
 
-function extractJson(raw) {
-  let jsonStr = raw.trim()
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
-  if (jsonMatch) jsonStr = jsonMatch[1]
-  const firstBrace = jsonStr.indexOf("{")
-  const lastBrace = jsonStr.lastIndexOf("}")
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    jsonStr = jsonStr.slice(firstBrace, lastBrace + 1)
-  }
-  return jsonStr
-}
-
 /**
  * POST /api/interview/score
  * AI 面试评分接口（非流式）
  * body: { question, answerPoints, userAnswer, model? }
  */
 router.post("/score", async (req, res) => {
-  const { question, answerPoints, userAnswer, model = DEFAULT_MODEL } = req.body || {}
+  const question = sanitizeString(req.body?.question, { maxLength: 2000 })
+  const userAnswer = sanitizeString(req.body?.userAnswer, { maxLength: 5000 })
+  const answerPoints = req.body?.answerPoints
+  const model = sanitizeString(req.body?.model, { required: false }) || DEFAULT_MODEL
 
   if (!question || !userAnswer) {
     return res.status(400).json({ error: "question 和 userAnswer 为必填字段" })
@@ -80,17 +74,9 @@ router.post("/score", async (req, res) => {
     .replace("{userAnswer}", userAnswer)
 
   try {
-    const response = await openai.chat.completions.create({
-      model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.3,
-      max_tokens: 600,
+    const result = await callAI({
+      model, prompt, temperature: 0.3, maxTokens: 600, logTag: "interview/score",
     })
-
-    const raw = response.choices[0]?.message?.content || ""
-    console.log("[interview/score] AI 原始返回:", raw.slice(0, 200))
-
-    const result = JSON.parse(extractJson(raw))
     res.json({
       score: result.score ?? 0,
       correctness: result.correctness ?? 0,
@@ -100,18 +86,7 @@ router.post("/score", async (req, res) => {
       improvedAnswer: result.improvedAnswer || "",
     })
   } catch (err) {
-    console.error("[interview/score] 评分失败:", err.message)
-    console.error("[interview/score] 错误详情:", JSON.stringify(err, Object.getOwnPropertyNames(err), 2))
-    // 返回 200 + 降级结果，避免浏览器控制台报 500
-    res.json({
-      error: err?.message || "评分服务异常",
-      score: 5,
-      correctness: 5,
-      completeness: 5,
-      clarity: 5,
-      feedback: "AI 评分服务暂时不可用，已为你生成默认评分。请检查 API Key 配置或稍后重试。",
-      improvedAnswer: "",
-    })
+    handleAIError(res, err, "interview/score", { fallbackMessage: "评分服务异常" })
   }
 })
 
@@ -127,8 +102,10 @@ router.post("/evaluate", async (req, res) => {
     conversationHistory = [],
     model = DEFAULT_MODEL,
   } = req.body || {}
+  const safeQuestion = sanitizeString(question, { maxLength: 2000 })
+  const safeModel = sanitizeString(model, { required: false }) || DEFAULT_MODEL
 
-  if (!question || !conversationHistory.length) {
+  if (!safeQuestion || !conversationHistory.length) {
     return res.status(400).json({ error: "question 和 conversationHistory 为必填字段" })
   }
 
@@ -151,7 +128,7 @@ router.post("/evaluate", async (req, res) => {
     .join("\n\n")
 
   const prompt = EVALUATE_PROMPT
-    .replace("{question}", question)
+    .replace("{question}", safeQuestion)
     .replace("{answerPoints}", pointsText)
     .replace("{history}", historyText)
     .replace(/\{maxRounds\}/g, String(MAX_ROUNDS))
@@ -159,17 +136,9 @@ router.post("/evaluate", async (req, res) => {
     .replace("{forceComplete}", forceComplete)
 
   try {
-    const response = await openai.chat.completions.create({
-      model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.3,
-      max_tokens: 600,
+    const result = await callAI({
+      model: safeModel, prompt, temperature: 0.3, maxTokens: 600, logTag: "interview/evaluate",
     })
-
-    const raw = response.choices[0]?.message?.content || ""
-    console.log("[interview/evaluate] AI 原始返回:", raw.slice(0, 200))
-
-    const result = JSON.parse(extractJson(raw))
 
     if (result.action === "follow_up") {
       return res.json({
@@ -190,17 +159,7 @@ router.post("/evaluate", async (req, res) => {
       improvedAnswer: result.improvedAnswer || "",
     })
   } catch (err) {
-    console.error("[interview/evaluate] 评估失败:", err.message)
-    // 降级：解析失败时强制返回 complete
-    res.json({
-      action: "complete",
-      score: 5,
-      correctness: 5,
-      completeness: 5,
-      clarity: 5,
-      feedback: "AI 深度评估服务暂时不可用，已为你生成默认评分。",
-      improvedAnswer: "",
-    })
+    handleAIError(res, err, "interview/evaluate", { fallbackMessage: "评估服务异常" })
   }
 })
 

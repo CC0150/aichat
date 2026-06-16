@@ -57,6 +57,14 @@ body {
   scrollbar-width: none;
 }
 
+/* Thin scrollbar — shared across all scrollable panels */
+.thin-scrollbar::-webkit-scrollbar { width: 4px; }
+.thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.thin-scrollbar::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; transition: background 0.3s; }
+.thin-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); }
+.thin-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.5); }
+.thin-scrollbar { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+
 /* floating-vue tooltip */
 .v-popper--theme-tooltip .v-popper__inner {
   @apply rounded-lg px-2.5 py-1.5 text-xs shadow-lg;

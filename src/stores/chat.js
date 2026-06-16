@@ -1,23 +1,30 @@
-import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
 
 /**
  * 每条消息: { role: 'user' | 'assistant', content: string }
  * messagesByChatId: { [chatId]: Message[] }
  */
 export const useChatStore = defineStore(
-  "chat",
+  'chat',
   () => {
-    const currentChatId = ref(null);
-    const lastInterruptedChatId = ref(null);
-    const history = ref([]);
-    const messagesByChatId = ref({}); // { [id]: [{ role, content }] }
+    const currentChatId = ref(null)
+    const lastInterruptedChatId = ref(null)
+    const history = ref([])
+    const messagesByChatId = ref({}) // { [id]: [{ role, content }] }
+    const undoState = ref(null)
+    const isRegenerating = ref(false)
+    let _regenerateAbort = null // 供外部中止 regenerate
+
+    const MAX_HISTORY = 50 // 最多保留 50 个会话
+    const MAX_MESSAGES_PER_CHAT = 200 // 每个会话最多 200 条消息
 
     function getContentText(content) {
-      if (content == null) return ""
-      if (typeof content === "string") return content
-      if (typeof content === "object" && "text" in content) return content.text != null ? String(content.text) : ""
-      return ""
+      if (content == null) return ''
+      if (typeof content === 'string') return content
+      if (typeof content === 'object' && 'text' in content)
+        return content.text != null ? String(content.text) : ''
+      return ''
     }
 
     /**
@@ -29,68 +36,66 @@ export const useChatStore = defineStore(
      * @returns {string} 会话标题
      */
     function buildTitleFromContent(content) {
-      if (!content) return "新对话";
-      let text = content.trim();
+      if (!content) return '新对话'
+      let text = content.trim()
 
       // 去掉开头的引号和空白符（中英文引号）
-      text = text.replace(/^[“”"'\s]+/, "");
+      text = text.replace(/^[“”"'\s]+/, '')
 
       // 移除常见的客套/口头开头（尽量多覆盖一些组合）
       const prefixes = [
-        "请帮我",
-        "可以帮我",
-        "麻烦你帮我",
-        "麻烦你",
-        "帮我",
-        "我想要",
-        "我想",
-        "帮忙",
-      ];
-      let trimmed = true;
+        '请帮我',
+        '可以帮我',
+        '麻烦你帮我',
+        '麻烦你',
+        '帮我',
+        '我想要',
+        '我想',
+        '帮忙',
+      ]
+      let trimmed = true
       while (trimmed && text) {
-        trimmed = false;
+        trimmed = false
         for (const prefix of prefixes) {
           if (text.startsWith(prefix)) {
-            text = text.slice(prefix.length).trimStart();
-            trimmed = true;
-            break;
+            text = text.slice(prefix.length).trimStart()
+            trimmed = true
+            break
           }
         }
       }
 
       // 再次去掉开头可能残留的标点/引号
-      text = text.replace(/^[，。,.“”"'\s]+/, "");
+      text = text.replace(/^[，。,.“”"'\s]+/, '')
 
       // 优先按句号/问号/叹号截断
-      const punctIndex = text.search(/[。！？\?!]/);
+      const punctIndex = text.search(/[。！？\?!]/)
       if (punctIndex > 0) {
-        text = text.slice(0, punctIndex);
+        text = text.slice(0, punctIndex)
       }
 
-      if (!text) return "新对话";
+      if (!text) return '新对话'
 
-      const maxLen = 20;
+      const maxLen = 20
       if (text.length > maxLen) {
-        return text.slice(0, maxLen) + "…";
+        return text.slice(0, maxLen) + '…'
       }
-      return text;
+      return text
     }
 
-    const currentChat = computed(() =>
-      history.value.find((c) => c.id === currentChatId.value),
-    );
+    const currentChat = computed(() => history.value.find((c) => c.id === currentChatId.value))
 
     const currentMessages = computed(() => {
-      if (!currentChatId.value) return [];
-      return messagesByChatId.value[currentChatId.value] ?? [];
-    });
+      if (!currentChatId.value) return []
+      return messagesByChatId.value[currentChatId.value] ?? []
+    })
 
     /**
      * 切换当前会话（不修改会话内容）
      * @param {string|null} id 会话 id
      */
     function setCurrentChat(id) {
-      currentChatId.value = id;
+      currentChatId.value = id
     }
 
     /**
@@ -99,15 +104,20 @@ export const useChatStore = defineStore(
      * @returns {string} 新会话 id
      */
     function addToHistory(chat) {
-      const id = chat.id || String(Date.now());
-      const rawTitle = (chat.title || "").trim();
-      const title = buildTitleFromContent(rawTitle);
+      const id = chat.id || String(Date.now())
+      const rawTitle = (chat.title || '').trim()
+      const title = buildTitleFromContent(rawTitle)
       history.value.unshift({
         id,
         title,
         updatedAt: new Date().toISOString(),
-      });
-      return id;
+      })
+      // 淘汰最旧的会话
+      while (history.value.length > MAX_HISTORY) {
+        const removed = history.value.pop()
+        delete messagesByChatId.value[removed.id]
+      }
+      return id
     }
 
     /**
@@ -116,18 +126,21 @@ export const useChatStore = defineStore(
      * @param {string|any} content
      */
     function addMessage(role, content) {
-      let chatId = currentChatId.value;
+      let chatId = currentChatId.value
       if (!chatId) {
-        chatId = addToHistory({ title: getContentText(content) });
-        currentChatId.value = chatId;
+        chatId = addToHistory({ title: getContentText(content) })
+        currentChatId.value = chatId
       }
-      if (!messagesByChatId.value[chatId]) messagesByChatId.value[chatId] = [];
-      messagesByChatId.value[chatId].push({ role, content });
+      if (!messagesByChatId.value[chatId]) messagesByChatId.value[chatId] = []
+      const msgs = messagesByChatId.value[chatId]
+      msgs.push({ role, content })
+      // 淘汰最旧的消息
+      while (msgs.length > MAX_MESSAGES_PER_CHAT) msgs.shift()
       // 更新该会话标题（仅当第一条为用户消息时）
-      const list = history.value.find((c) => c.id === chatId);
-      if (list && (list.title === "新对话" || !list.title)) {
-        list.title = buildTitleFromContent(getContentText(content)) || "新对话";
-        list.updatedAt = new Date().toISOString();
+      const list = history.value.find((c) => c.id === chatId)
+      if (list && (list.title === '新对话' || !list.title)) {
+        list.title = buildTitleFromContent(getContentText(content)) || '新对话'
+        list.updatedAt = new Date().toISOString()
       }
     }
 
@@ -137,13 +150,10 @@ export const useChatStore = defineStore(
      * @param {string} content
      */
     function appendToLastMessage(content) {
-      const chatId = currentChatId.value;
-      if (!chatId || !messagesByChatId.value[chatId]?.length) return;
-      const last =
-        messagesByChatId.value[chatId][
-          messagesByChatId.value[chatId].length - 1
-        ];
-      if (last.role === "assistant") last.content += content;
+      const chatId = currentChatId.value
+      if (!chatId || !messagesByChatId.value[chatId]?.length) return
+      const last = messagesByChatId.value[chatId][messagesByChatId.value[chatId].length - 1]
+      if (last.role === 'assistant') last.content += content
     }
 
     /**
@@ -152,13 +162,10 @@ export const useChatStore = defineStore(
      * @param {string} content
      */
     function setLastAssistantMessage(content) {
-      const chatId = currentChatId.value;
-      if (!chatId || !messagesByChatId.value[chatId]?.length) return;
-      const last =
-        messagesByChatId.value[chatId][
-          messagesByChatId.value[chatId].length - 1
-        ];
-      if (last.role === "assistant") last.content = content;
+      const chatId = currentChatId.value
+      if (!chatId || !messagesByChatId.value[chatId]?.length) return
+      const last = messagesByChatId.value[chatId][messagesByChatId.value[chatId].length - 1]
+      if (last.role === 'assistant') last.content = content
     }
 
     /**
@@ -167,10 +174,10 @@ export const useChatStore = defineStore(
      * @param {string} newTitle 新标题
      */
     function renameChat(id, newTitle) {
-      const item = history.value.find((c) => c.id === id);
+      const item = history.value.find((c) => c.id === id)
       if (item && newTitle?.trim()) {
-        item.title = newTitle.trim();
-        item.updatedAt = new Date().toISOString();
+        item.title = newTitle.trim()
+        item.updatedAt = new Date().toISOString()
       }
     }
 
@@ -180,16 +187,13 @@ export const useChatStore = defineStore(
      * @param userMessageIndex 用户消息在 currentMessages 中的下标
      */
     function deleteTurnByUserIndex(chatId, userMessageIndex) {
-      const list = messagesByChatId.value[chatId];
-      if (!list || userMessageIndex < 0 || userMessageIndex >= list.length)
-        return;
-      if (list[userMessageIndex].role !== "user") return;
-      const next = list[userMessageIndex + 1];
-      if (next?.role === "assistant") {
-        list.splice(userMessageIndex, 2);
-      } else {
-        list.splice(userMessageIndex, 1);
-      }
+      const list = messagesByChatId.value[chatId]
+      if (!list || userMessageIndex < 0 || userMessageIndex >= list.length) return
+      if (list[userMessageIndex].role !== 'user') return
+      const next = list[userMessageIndex + 1]
+      const count = next?.role === 'assistant' ? 2 : 1
+      const removed = list.splice(userMessageIndex, count)
+      _saveUndo(chatId, removed, userMessageIndex)
     }
 
     /**
@@ -198,16 +202,28 @@ export const useChatStore = defineStore(
      * @param assistantMessageIndex AI 消息在 currentMessages 中的下标
      */
     function deleteTurnByAssistantIndex(chatId, assistantMessageIndex) {
-      const list = messagesByChatId.value[chatId];
-      if (
-        !list ||
-        assistantMessageIndex <= 0 ||
-        assistantMessageIndex >= list.length
-      )
-        return;
-      if (list[assistantMessageIndex].role !== "assistant") return;
-      if (list[assistantMessageIndex - 1].role !== "user") return;
-      list.splice(assistantMessageIndex - 1, 2);
+      const list = messagesByChatId.value[chatId]
+      if (!list || assistantMessageIndex <= 0 || assistantMessageIndex >= list.length) return
+      if (list[assistantMessageIndex].role !== 'assistant') return
+      if (list[assistantMessageIndex - 1].role !== 'user') return
+      const removed = list.splice(assistantMessageIndex - 1, 2)
+      _saveUndo(chatId, removed, assistantMessageIndex - 1)
+    }
+
+    function _saveUndo(chatId, removedItems, insertIndex) {
+      if (undoState.value?.timer) clearTimeout(undoState.value.timer)
+      const timer = setTimeout(() => {
+        undoState.value = null
+      }, 5000)
+      undoState.value = { chatId, items: removedItems, insertIndex, timer }
+    }
+
+    function undoDelete() {
+      if (!undoState.value) return
+      const { chatId, items, insertIndex } = undoState.value
+      const list = messagesByChatId.value[chatId]
+      if (list) list.splice(insertIndex, 0, ...items)
+      undoState.value = null
     }
 
     /**
@@ -217,19 +233,14 @@ export const useChatStore = defineStore(
      * @param generateReply 可选，函数 (userContent) => newReplyContent，不传则用默认模拟
      */
     function regenerateReply(chatId, assistantMessageIndex, generateReply) {
-      const list = messagesByChatId.value[chatId];
-      if (
-        !list ||
-        assistantMessageIndex <= 0 ||
-        assistantMessageIndex >= list.length
-      )
-        return;
-      if (list[assistantMessageIndex].role !== "assistant") return;
-      const userContent = list[assistantMessageIndex - 1]?.content || "";
+      const list = messagesByChatId.value[chatId]
+      if (!list || assistantMessageIndex <= 0 || assistantMessageIndex >= list.length) return
+      if (list[assistantMessageIndex].role !== 'assistant') return
+      const userContent = list[assistantMessageIndex - 1]?.content || ''
       const newContent = generateReply
         ? generateReply(userContent)
-        : `（重新生成）收到：「${userContent.slice(0, 50)}${userContent.length > 50 ? "…" : ""}」\n\n这是一条重新生成的模拟回复。`;
-      list[assistantMessageIndex].content = newContent;
+        : `（重新生成）收到：「${userContent.slice(0, 50)}${userContent.length > 50 ? '…' : ''}」\n\n这是一条重新生成的模拟回复。`
+      list[assistantMessageIndex].content = newContent
     }
 
     /**
@@ -239,15 +250,15 @@ export const useChatStore = defineStore(
      * @param {string} newContent 新内容
      */
     function updateMessage(chatId, messageIndex, newContent) {
-      const list = messagesByChatId.value[chatId];
-      if (!list || messageIndex < 0 || messageIndex >= list.length) return;
-      list[messageIndex].content = newContent;
+      const list = messagesByChatId.value[chatId]
+      if (!list || messageIndex < 0 || messageIndex >= list.length) return
+      list[messageIndex].content = newContent
       // 如果是用户的第一条消息，更新会话标题
-      if (messageIndex === 0 && list[messageIndex].role === "user") {
-        const chat = history.value.find((c) => c.id === chatId);
+      if (messageIndex === 0 && list[messageIndex].role === 'user') {
+        const chat = history.value.find((c) => c.id === chatId)
         if (chat) {
-          chat.title = buildTitleFromContent(newContent);
-          chat.updatedAt = new Date().toISOString();
+          chat.title = buildTitleFromContent(newContent)
+          chat.updatedAt = new Date().toISOString()
         }
       }
     }
@@ -257,18 +268,32 @@ export const useChatStore = defineStore(
      * @param {string} id 会话 id
      */
     function removeFromHistory(id) {
-      history.value = history.value.filter((c) => c.id !== id);
-      delete messagesByChatId.value[id];
-      if (currentChatId.value === id) currentChatId.value = null;
+      history.value = history.value.filter((c) => c.id !== id)
+      delete messagesByChatId.value[id]
+      if (currentChatId.value === id) currentChatId.value = null
     }
 
     /**
      * 清空所有会话与消息
      */
     function clearHistory() {
-      history.value = [];
-      messagesByChatId.value = {};
-      currentChatId.value = null;
+      history.value = []
+      messagesByChatId.value = {}
+      currentChatId.value = null
+    }
+
+    function setRegenerateAbort(controller) {
+      _regenerateAbort = controller
+    }
+
+    function abortRegenerate() {
+      if (_regenerateAbort) {
+        try {
+          _regenerateAbort.abort()
+        } catch (_) {}
+        _regenerateAbort = null
+      }
+      isRegenerating.value = false
     }
 
     return {
@@ -284,15 +309,20 @@ export const useChatStore = defineStore(
       appendToLastMessage,
       setLastAssistantMessage,
       renameChat,
+      undoState,
+      undoDelete,
       deleteTurnByUserIndex,
       deleteTurnByAssistantIndex,
       regenerateReply,
       updateMessage,
       removeFromHistory,
       clearHistory,
-    };
+      isRegenerating,
+      setRegenerateAbort,
+      abortRegenerate,
+    }
   },
   {
     persist: true,
   },
-);
+)

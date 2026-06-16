@@ -36,7 +36,8 @@ export async function buildMessagesWithContext({
         return isLastUser && (hasCurrentAttachments || hasCurrentImages)
       }
       if (Array.isArray(c)) return c.length > 0
-      if (c && typeof c === 'object') return !!(c.text != null || (c.attachments?.length) || (c.images?.length))
+      if (c && typeof c === 'object')
+        return !!(c.text != null || c.attachments?.length || c.images?.length)
       return !!c
     })
     .map((m) => {
@@ -68,7 +69,8 @@ export async function buildMessagesWithContext({
 
     let body = parts.join('\n\n--- 分隔线：下一个附件 ---\n\n')
     if (body.length > maxContextChars) {
-      body = body.slice(0, maxContextChars) +
+      body =
+        body.slice(0, maxContextChars) +
         `\n\n（提示：由于参考文档内容过长，以上内容已被整体截断，仅保留前 ${maxContextChars} 个字符。）`
     }
 
@@ -76,25 +78,18 @@ export async function buildMessagesWithContext({
       '以下是用户提供的参考文档，请结合这些文档内容以及用户的后续问题进行深度分析。' +
       '如果文档中没有相关信息，请明确告知用户，而不要编造内容。文档内容如下：\n\n' +
       body
-    messages = [
-      { role: 'system', content: systemContent },
-      ...messages,
-    ]
+    messages = [{ role: 'system', content: systemContent }, ...messages]
   }
 
   // 3）历史中是否已有图片（多轮记忆）
   let historyHasImages = messages.some(
-    (m) =>
-      Array.isArray(m.content) &&
-      m.content.some((part) => part?.type === 'image_url')
+    (m) => Array.isArray(m.content) && m.content.some((part) => part?.type === 'image_url'),
   )
 
   // 4）当前轮图片：若模型支持视觉则转为 Base64，否则以文本说明替代
   if (hasImages) {
     if (supportsVision) {
-      const imageDataUrls = await Promise.all(
-        images.map((img) => fileToDataUrl(img.file))
-      )
+      const imageDataUrls = await Promise.all(images.map((img) => fileToDataUrl(img.file)))
 
       if (imageDataUrls.length) {
         const imageParts = imageDataUrls.map((url) => ({
@@ -106,10 +101,7 @@ export async function buildMessagesWithContext({
           if (messages[i].role === 'user') {
             messages[i] = {
               ...messages[i],
-              content: [
-                { type: 'text', text },
-                ...imageParts,
-              ],
+              content: [{ type: 'text', text }, ...imageParts],
             }
             break
           }
@@ -132,4 +124,3 @@ export async function buildMessagesWithContext({
 
   return { messages, historyHasImages }
 }
-

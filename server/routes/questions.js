@@ -1,14 +1,11 @@
 const { Router } = require("express")
-const { openai, DEFAULT_MODEL } = require("../config")
+const { DEFAULT_MODEL } = require("../config")
+const { callAI } = require("../services/aiCompletions")
+const { handleAIError } = require("../services/errorHandler")
+const { DIFFICULTY_MAP } = require("../utils/constants")
+const { sanitizeString, validateEnum, clampNumber } = require("../utils/validate")
 
 const router = Router()
-
-const DIFFICULTY_MAP = {
-  all: "简单 40%、中等 40%、困难 20%",
-  easy: "全部为简单难度",
-  medium: "全部为中等难度",
-  hard: "全部为困难难度",
-}
 
 const GENERATE_PROMPT = `你是一位专业的面试官。请根据用户提供的文档内容，生成面试题。
 
@@ -35,39 +32,22 @@ const GENERATE_PROMPT = `你是一位专业的面试官。请根据用户提供�
 type 可选值：concept（概念题）、coding（编程题）、scenario（场景题）
 仅返回 JSON 数组，不要其他任何内容。`
 
-function extractJson(raw) {
-  let jsonStr = raw.trim()
-  // 去除 markdown 代码块包裹
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
-  if (jsonMatch) jsonStr = jsonMatch[1]
-  // 定位首尾括号
-  const firstBracket = jsonStr.indexOf("[")
-  const lastBracket = jsonStr.lastIndexOf("]")
-  if (firstBracket !== -1 && lastBracket > firstBracket) {
-    jsonStr = jsonStr.slice(firstBracket, lastBracket + 1)
-  }
-  return jsonStr
-}
-
 /**
  * POST /api/questions/generate
  * 根据文档内容生成面试题
  * body: { content, questionCount, difficulty?, model? }
  */
 router.post("/generate", async (req, res) => {
-  const {
-    content,
-    questionCount = 5,
-    difficulty = "all",
-    model = DEFAULT_MODEL,
-  } = req.body || {}
+  const content = sanitizeString(req.body?.content, { maxLength: 15000 })
+  const count = clampNumber(req.body?.questionCount, 1, 20, 5)
+  const difficulty = validateEnum(req.body?.difficulty, ["all", "easy", "medium", "hard"], "all")
+  const model = sanitizeString(req.body?.model, { required: false }) || DEFAULT_MODEL
 
   if (!content) {
     return res.status(400).json({ error: "content 为必填字段" })
   }
 
-  const count = Math.min(Math.max(questionCount, 1), 20)
-  const difficultyText = DIFFICULTY_MAP[difficulty] || DIFFICULTY_MAP.all
+  const difficultyText = DIFFICULTY_MAP[difficulty]
 
   // 内容截断保护，防止超长文档超出上下文窗口
   const MAX_CONTENT = 8000
@@ -84,17 +64,9 @@ router.post("/generate", async (req, res) => {
     .replace("{difficulty}", difficultyText)
 
   try {
-    const response = await openai.chat.completions.create({
-      model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.5,
-      max_tokens: 4000,
+    const questions = await callAI({
+      model, prompt, temperature: 0.5, maxTokens: 4000, logTag: "questions/generate",
     })
-
-    const raw = response.choices[0]?.message?.content || ""
-    console.log("[questions/generate] AI 原始返回:", raw.slice(0, 200))
-
-    const questions = JSON.parse(extractJson(raw))
 
     if (!Array.isArray(questions) || questions.length === 0) {
       return res.json({ questions: [], error: "AI 未能生成有效题目，请重试。" })
@@ -116,13 +88,9 @@ router.post("/generate", async (req, res) => {
     console.log(`[questions/generate] 成功生成 ${result.length} 道题目`)
     res.json({ questions: result })
   } catch (err) {
-    console.error("[questions/generate] 生成失败:", err.message)
-    if (err instanceof SyntaxError) {
-      console.error("[questions/generate] JSON 解析失败，原始返回:", String(err).slice(0, 300))
-    }
-    res.json({
-      error: err?.message || "题目生成服务异常",
-      questions: [],
+    handleAIError(res, err, "questions/generate", {
+      fallbackMessage: "题目生成服务异常",
+      extras: { questions: [] },
     })
   }
 })
@@ -159,19 +127,16 @@ type 可选值：concept（概念题）、coding（编程题）、scenario（场
  * body: { role, questionCount, difficulty?, model? }
  */
 router.post("/generate-by-role", async (req, res) => {
-  const {
-    role,
-    questionCount = 5,
-    difficulty = "all",
-    model = DEFAULT_MODEL,
-  } = req.body || {}
+  const role = sanitizeString(req.body?.role, { maxLength: 200 })
+  const count = clampNumber(req.body?.questionCount, 1, 20, 5)
+  const difficulty = validateEnum(req.body?.difficulty, ["all", "easy", "medium", "hard"], "all")
+  const model = sanitizeString(req.body?.model, { required: false }) || DEFAULT_MODEL
 
-  if (!role || !role.trim()) {
+  if (!role) {
     return res.status(400).json({ error: "role 为必填字段" })
   }
 
-  const count = Math.min(Math.max(questionCount, 1), 20)
-  const difficultyText = DIFFICULTY_MAP[difficulty] || DIFFICULTY_MAP.all
+  const difficultyText = DIFFICULTY_MAP[difficulty]
 
   const prompt = ROLE_PROMPT
     .replace("{role}", role.trim())
@@ -179,17 +144,9 @@ router.post("/generate-by-role", async (req, res) => {
     .replace("{difficulty}", difficultyText)
 
   try {
-    const response = await openai.chat.completions.create({
-      model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7,
-      max_tokens: 4000,
+    const questions = await callAI({
+      model, prompt, temperature: 0.7, maxTokens: 4000, logTag: "questions/generate-by-role",
     })
-
-    const raw = response.choices[0]?.message?.content || ""
-    console.log("[questions/generate-by-role] AI 原始返回:", raw.slice(0, 200))
-
-    const questions = JSON.parse(extractJson(raw))
 
     if (!Array.isArray(questions) || questions.length === 0) {
       return res.json({ questions: [], error: "AI 未能生成有效题目，请重试。" })
@@ -210,13 +167,9 @@ router.post("/generate-by-role", async (req, res) => {
     console.log(`[questions/generate-by-role] 成功生成 ${result.length} 道题目（岗位: ${role.trim()}）`)
     res.json({ questions: result })
   } catch (err) {
-    console.error("[questions/generate-by-role] 生成失败:", err.message)
-    if (err instanceof SyntaxError) {
-      console.error("[questions/generate-by-role] JSON 解析失败，原始返回:", String(err).slice(0, 300))
-    }
-    res.json({
-      error: err?.message || "题目生成服务异常",
-      questions: [],
+    handleAIError(res, err, "questions/generate-by-role", {
+      fallbackMessage: "题目生成服务异常",
+      extras: { questions: [] },
     })
   }
 })

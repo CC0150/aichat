@@ -1,34 +1,30 @@
-import { defineStore } from "pinia"
-import { ref, computed } from "vue"
-import { selectQuestions, interviewTypes, getQuestionById } from "@/data/questions/index.js"
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import { selectQuestions, interviewTypes, getQuestionById } from '@/data/questions/index.js'
 
 export const useInterviewStore = defineStore(
-  "interview",
+  'interview',
   () => {
     // ===== 面试会话 =====
-    const interviewType = ref(null)          // 当前面试类型 key
-    const questions = ref([])                // 本轮题目列表
-    const currentIndex = ref(0)              // 当前题目下标
-    const phase = ref("idle")                // idle | answering | scoring | feedback | finished
-    const answers = ref({})                  // { [questionId]: userAnswer }
-    const scores = ref({})                   // { [questionId]: { score, correctness, completeness, clarity, feedback, improvedAnswer } }
-    const conversations = ref({})            // { [questionId]: [{ role:'user'|'assistant', content }] } 多轮对话记录
-    const isCustomMode = ref(false)          // 是否为自定义题目模式（文件出题 / AI 生成）
-    const customSource = ref('')             // 自定义题目的来源描述（文件名等）
-    const startedAt = ref(null)              // 面试开始时间
+    const interviewType = ref(null) // 当前面试类型 key
+    const questions = ref([]) // 本轮题目列表
+    const currentIndex = ref(0) // 当前题目下标
+    const phase = ref('idle') // idle | answering | scoring | feedback | finished
+    const answers = ref({}) // { [questionId]: userAnswer }
+    const scores = ref({}) // { [questionId]: { score, correctness, completeness, clarity, feedback, improvedAnswer } }
+    const conversations = ref({}) // { [questionId]: [{ role:'user'|'assistant', content }] } 多轮对话记录
+    const isCustomMode = ref(false) // 是否为自定义题目模式（文件出题 / AI 生成）
+    const customSource = ref('') // 自定义题目的来源描述（文件名等）
+    const startedAt = ref(null) // 面试开始时间
 
     // ===== 历史记录 =====
-    const history = ref([])                  // 每次完成的面试记录 [{ id, type, questions, answers, scores, startedAt, finishedAt, totalScore }]
+    const history = ref([]) // 每次完成的面试记录 [{ id, type, questions, answers, scores, startedAt, finishedAt, totalScore }]
 
     // ===== 计算属性 =====
-    const currentQuestion = computed(() =>
-      questions.value[currentIndex.value] || null
-    )
+    const currentQuestion = computed(() => questions.value[currentIndex.value] || null)
 
     /** 当前题目的多轮对话历史 */
-    const currentConversation = computed(() =>
-      conversations.value[currentQuestion.value?.id] || []
-    )
+    const currentConversation = computed(() => conversations.value[currentQuestion.value?.id] || [])
 
     const progress = computed(() => ({
       current: currentIndex.value + 1,
@@ -38,14 +34,14 @@ export const useInterviewStore = defineStore(
         : 0,
     }))
 
-    const isLastQuestion = computed(() =>
-      currentIndex.value >= questions.value.length - 1
-    )
+    const isLastQuestion = computed(() => currentIndex.value >= questions.value.length - 1)
 
     const totalScore = computed(() => {
       const values = Object.values(scores.value)
       if (values.length === 0) return 0
-      return Math.round(values.reduce((sum, s) => sum + (s.score || 0), 0) / values.length * 10) / 10
+      return (
+        Math.round((values.reduce((sum, s) => sum + (s.score || 0), 0) / values.length) * 10) / 10
+      )
     })
 
     // 按知识点聚合得分率（用于雷达图）
@@ -97,23 +93,29 @@ export const useInterviewStore = defineStore(
     const overallStats = computed(() => {
       if (history.value.length === 0) return null
       const totalInterviews = history.value.length
-      const avgScore = Math.round(
-        history.value.reduce((sum, h) => sum + h.totalScore, 0) / totalInterviews * 10
-      ) / 10
+      const avgScore =
+        Math.round(
+          (history.value.reduce((sum, h) => sum + h.totalScore, 0) / totalInterviews) * 10,
+        ) / 10
       const recentInterviews = [...history.value]
         .sort((a, b) => new Date(b.finishedAt) - new Date(a.finishedAt))
         .slice(0, 10)
-      const scoreTrend = recentInterviews.map((h) => ({
-        date: new Date(h.finishedAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric" }),
-        score: h.totalScore,
-      })).reverse()
+      const scoreTrend = recentInterviews
+        .map((h) => ({
+          date: new Date(h.finishedAt).toLocaleDateString('zh-CN', {
+            month: 'short',
+            day: 'numeric',
+          }),
+          score: h.totalScore,
+        }))
+        .reverse()
       return { totalInterviews, avgScore, scoreTrend }
     })
 
     // ===== 操作 =====
 
     /** 开始一轮新面试 */
-    function startInterview(typeKey, customCount, difficulty = "all") {
+    function startInterview(typeKey, customCount, difficulty = 'all') {
       const typeConfig = interviewTypes[typeKey]
       if (!typeConfig) return false
 
@@ -132,7 +134,7 @@ export const useInterviewStore = defineStore(
       conversations.value = {}
       isCustomMode.value = false
       customSource.value = ''
-      phase.value = "answering"
+      phase.value = 'answering'
       startedAt.value = new Date().toISOString()
       return true
     }
@@ -169,9 +171,9 @@ export const useInterviewStore = defineStore(
       answers.value[questionId] = answer
       if (useDeepMode) {
         // 追加到对话记录
-        appendToConversation(questionId, "user", answer)
+        appendToConversation(questionId, 'user', answer)
       }
-      phase.value = "scoring"
+      phase.value = 'scoring'
     }
 
     /** 追加消息到某题的对话记录 */
@@ -189,19 +191,19 @@ export const useInterviewStore = defineStore(
         correctness: scoreData.correctness ?? 0,
         completeness: scoreData.completeness ?? 0,
         clarity: scoreData.clarity ?? 0,
-        feedback: scoreData.feedback ?? "",
-        improvedAnswer: scoreData.improvedAnswer ?? "",
+        feedback: scoreData.feedback ?? '',
+        improvedAnswer: scoreData.improvedAnswer ?? '',
       }
-      phase.value = "feedback"
+      phase.value = 'feedback'
     }
 
     /** 处理深度评估结果（多轮追问模式） */
     function handleEvaluateResult(questionId, result) {
-      if (result.action === "follow_up") {
+      if (result.action === 'follow_up') {
         // 记录 AI 追问，回到答题状态
-        appendToConversation(questionId, "assistant", result.followUpQuestion)
-        phase.value = "answering"
-        return "follow_up"
+        appendToConversation(questionId, 'assistant', result.followUpQuestion)
+        phase.value = 'answering'
+        return 'follow_up'
       }
       // action === "complete"，保存最终评分
       saveScore(questionId, {
@@ -212,7 +214,7 @@ export const useInterviewStore = defineStore(
         feedback: result.feedback,
         improvedAnswer: result.improvedAnswer,
       })
-      return "complete"
+      return 'complete'
     }
 
     /** 跳转到指定题目 */
@@ -221,12 +223,12 @@ export const useInterviewStore = defineStore(
       currentIndex.value = index
       const q = questions.value[index]
       if (scores.value[q.id]) {
-        phase.value = "feedback"
+        phase.value = 'feedback'
       } else if (conversations.value[q.id]?.length) {
         // 有对话记录但未完成评分 → 回到回答阶段继续追问
-        phase.value = "answering"
+        phase.value = 'answering'
       } else {
-        phase.value = "answering"
+        phase.value = 'answering'
       }
     }
 
@@ -246,18 +248,18 @@ export const useInterviewStore = defineStore(
       } else {
         resetCurrentQuestionState(curQId)
         currentIndex.value++
-        phase.value = "answering"
+        phase.value = 'answering'
       }
     }
 
     /** 结束面试，存入历史 */
     function finishInterview() {
-      phase.value = "finished"
+      phase.value = 'finished'
       const finishedAt = new Date().toISOString()
       history.value.unshift({
         id: Date.now().toString(),
         type: interviewType.value,
-        typeLabel: interviewTypes[interviewType.value]?.label || "",
+        typeLabel: interviewTypes[interviewType.value]?.label || '',
         questions: [...questions.value],
         answers: { ...answers.value },
         scores: { ...scores.value },
@@ -275,7 +277,7 @@ export const useInterviewStore = defineStore(
       interviewType.value = null
       questions.value = []
       currentIndex.value = 0
-      phase.value = "idle"
+      phase.value = 'idle'
       answers.value = {}
       scores.value = {}
       conversations.value = {}
@@ -336,5 +338,5 @@ export const useInterviewStore = defineStore(
       deleteHistoryRecords,
     }
   },
-  { persist: true }
+  { persist: true },
 )

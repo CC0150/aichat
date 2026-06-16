@@ -1,79 +1,84 @@
 const { Router } = require("express")
-const fs = require("fs")
+const fs = require("fs/promises")
 const path = require("path")
-const { openai, DEFAULT_MODEL } = require("../config")
+const { DEFAULT_MODEL } = require("../config")
+const { callAI } = require("../services/aiCompletions")
+const { handleAIError } = require("../services/errorHandler")
+const { DIFFICULTY_MAP } = require("../utils/constants")
+const { sanitizeString, validateEnum, clampNumber } = require("../utils/validate")
 
 const router = Router()
 
 const DATA_DIR = path.join(__dirname, "..", "data", "knowledge")
 const INDEX_FILE = path.join(DATA_DIR, "index.json")
 
-function ensureDir(dir) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+async function ensureDir(dir) {
+  try {
+    await fs.mkdir(dir, { recursive: true })
+  } catch (_) {}
 }
 
-function readIndex() {
-  ensureDir(DATA_DIR)
-  if (!fs.existsSync(INDEX_FILE)) {
-    fs.writeFileSync(INDEX_FILE, "[]", "utf-8")
-    return []
-  }
+async function readIndex() {
+  await ensureDir(DATA_DIR)
   try {
-    return JSON.parse(fs.readFileSync(INDEX_FILE, "utf-8"))
+    return JSON.parse(await fs.readFile(INDEX_FILE, "utf-8"))
   } catch {
+    await fs.writeFile(INDEX_FILE, "[]", "utf-8")
     return []
   }
 }
 
-function writeIndex(data) {
-  ensureDir(DATA_DIR)
-  fs.writeFileSync(INDEX_FILE, JSON.stringify(data, null, 2), "utf-8")
+async function writeIndex(data) {
+  await ensureDir(DATA_DIR)
+  await fs.writeFile(INDEX_FILE, JSON.stringify(data, null, 2), "utf-8")
 }
 
-function readMeta(kbId) {
+async function readMeta(kbId) {
   const metaPath = path.join(DATA_DIR, kbId, "meta.json")
-  if (!fs.existsSync(metaPath)) return null
   try {
-    return JSON.parse(fs.readFileSync(metaPath, "utf-8"))
+    return JSON.parse(await fs.readFile(metaPath, "utf-8"))
   } catch {
     return null
   }
 }
 
-function writeMeta(kbId, data) {
+async function writeMeta(kbId, data) {
   const kbDir = path.join(DATA_DIR, kbId)
-  ensureDir(kbDir)
-  fs.writeFileSync(path.join(kbDir, "meta.json"), JSON.stringify(data, null, 2), "utf-8")
+  await ensureDir(kbDir)
+  await fs.writeFile(path.join(kbDir, "meta.json"), JSON.stringify(data, null, 2), "utf-8")
 }
 
-function readFileContent(kbId, fileId) {
+async function readFileContent(kbId, fileId) {
   const filePath = path.join(DATA_DIR, kbId, "files", `${fileId}.txt`)
-  if (!fs.existsSync(filePath)) return null
-  return fs.readFileSync(filePath, "utf-8")
+  try {
+    return await fs.readFile(filePath, "utf-8")
+  } catch {
+    return null
+  }
 }
 
-function writeFileContent(kbId, fileId, content) {
+async function writeFileContent(kbId, fileId, content) {
   const filesDir = path.join(DATA_DIR, kbId, "files")
-  ensureDir(filesDir)
-  fs.writeFileSync(path.join(filesDir, `${fileId}.txt`), content, "utf-8")
+  await ensureDir(filesDir)
+  await fs.writeFile(path.join(filesDir, `${fileId}.txt`), content, "utf-8")
 }
 
-function deleteFileContent(kbId, fileId) {
+async function deleteFileContent(kbId, fileId) {
   const filePath = path.join(DATA_DIR, kbId, "files", `${fileId}.txt`)
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+  try { await fs.unlink(filePath) } catch (_) {}
 }
 
-function deleteKBDir(kbId) {
+async function deleteKBDir(kbId) {
   const kbDir = path.join(DATA_DIR, kbId)
-  if (fs.existsSync(kbDir)) fs.rmSync(kbDir, { recursive: true, force: true })
+  try { await fs.rm(kbDir, { recursive: true, force: true }) } catch (_) {}
 }
 
 // ===== Routes =====
 
 /** GET /api/knowledge — 列出所有知识库 */
-router.get("/", (_req, res) => {
+router.get("/", async (_req, res) => {
   try {
-    const list = readIndex()
+    const list = await readIndex()
     res.json(list)
   } catch (err) {
     console.error("[knowledge] 列表读取失败:", err.message)
@@ -82,9 +87,10 @@ router.get("/", (_req, res) => {
 })
 
 /** POST /api/knowledge — 创建知识库 */
-router.post("/", (req, res) => {
-  const { name, description = "" } = req.body || {}
-  if (!name || !name.trim()) {
+router.post("/", async (req, res) => {
+  const name = sanitizeString(req.body?.name, { maxLength: 100 })
+  const description = sanitizeString(req.body?.description, { maxLength: 500, required: false }) || ""
+  if (!name) {
     return res.status(400).json({ error: "知识库名称不能为空" })
   }
 
@@ -93,22 +99,22 @@ router.post("/", (req, res) => {
     const now = new Date().toISOString()
     const meta = {
       id,
-      name: name.trim(),
-      description: description.trim(),
+      name,
+      description,
       createdAt: now,
       files: [],
     }
-    writeMeta(id, meta)
+    await writeMeta(id, meta)
 
-    const list = readIndex()
+    const list = await readIndex()
     list.unshift({
       id,
-      name: name.trim(),
-      description: description.trim(),
+      name,
+      description,
       fileCount: 0,
       createdAt: now,
     })
-    writeIndex(list)
+    await writeIndex(list)
 
     res.json(meta)
   } catch (err) {
@@ -118,12 +124,12 @@ router.post("/", (req, res) => {
 })
 
 /** DELETE /api/knowledge/:id — 删除知识库 */
-router.delete("/:id", (req, res) => {
+router.delete("/:id", async (req, res) => {
   const { id } = req.params
   try {
-    deleteKBDir(id)
-    const list = readIndex().filter((kb) => kb.id !== id)
-    writeIndex(list)
+    await deleteKBDir(id)
+    const list = (await readIndex()).filter((kb) => kb.id !== id)
+    await writeIndex(list)
     res.json({ success: true })
   } catch (err) {
     console.error("[knowledge] 删除失败:", err.message)
@@ -132,10 +138,10 @@ router.delete("/:id", (req, res) => {
 })
 
 /** GET /api/knowledge/:id — 获取知识库详情 */
-router.get("/:id", (req, res) => {
+router.get("/:id", async (req, res) => {
   const { id } = req.params
   try {
-    const meta = readMeta(id)
+    const meta = await readMeta(id)
     if (!meta) return res.status(404).json({ error: "知识库不存在" })
     res.json(meta)
   } catch (err) {
@@ -145,37 +151,38 @@ router.get("/:id", (req, res) => {
 })
 
 /** POST /api/knowledge/:id/files — 上传文件到知识库 */
-router.post("/:id/files", (req, res) => {
+router.post("/:id/files", async (req, res) => {
   const { id } = req.params
-  const { name, type, content } = req.body || {}
+  const name = sanitizeString(req.body?.name, { maxLength: 200 })
+  const type = sanitizeString(req.body?.type, { maxLength: 20, required: false }) || "text"
+  const content = sanitizeString(req.body?.content, { maxLength: 100000 })
 
   if (!name || !content) {
     return res.status(400).json({ error: "文件名和内容不能为空" })
   }
 
   try {
-    const meta = readMeta(id)
+    const meta = await readMeta(id)
     if (!meta) return res.status(404).json({ error: "知识库不存在" })
 
     const fileId = `f-${Date.now()}`
     const fileRecord = {
       id: fileId,
-      name: name.trim(),
-      type: type || "text",
+      name,
+      type,
       charCount: content.length,
       uploadedAt: new Date().toISOString(),
     }
 
-    writeFileContent(id, fileId, content)
+    await writeFileContent(id, fileId, content)
     meta.files.push(fileRecord)
-    writeMeta(id, meta)
+    await writeMeta(id, meta)
 
-    // 更新 index 中的 fileCount
-    const list = readIndex()
+    const list = await readIndex()
     const idx = list.findIndex((kb) => kb.id === id)
     if (idx !== -1) {
       list[idx].fileCount = meta.files.length
-      writeIndex(list)
+      await writeIndex(list)
     }
 
     res.json(fileRecord)
@@ -186,23 +193,22 @@ router.post("/:id/files", (req, res) => {
 })
 
 /** DELETE /api/knowledge/:id/files/:fileId — 删除文件 */
-router.delete("/:id/files/:fileId", (req, res) => {
+router.delete("/:id/files/:fileId", async (req, res) => {
   const { id, fileId } = req.params
 
   try {
-    const meta = readMeta(id)
+    const meta = await readMeta(id)
     if (!meta) return res.status(404).json({ error: "知识库不存在" })
 
     meta.files = meta.files.filter((f) => f.id !== fileId)
-    writeMeta(id, meta)
-    deleteFileContent(id, fileId)
+    await writeMeta(id, meta)
+    await deleteFileContent(id, fileId)
 
-    // 更新 index
-    const list = readIndex()
+    const list = await readIndex()
     const idx = list.findIndex((kb) => kb.id === id)
     if (idx !== -1) {
       list[idx].fileCount = meta.files.length
-      writeIndex(list)
+      await writeIndex(list)
     }
 
     res.json({ success: true })
@@ -239,46 +245,25 @@ const GENERATE_FROM_KB_PROMPT = `你是一位专业的面试官。请根据以�
 type 可选值：concept、coding、scenario
 仅返回 JSON 数组，不要其他任何内容。`
 
-const DIFFICULTY_MAP = {
-  all: "简单 40%、中等 40%、困难 20%",
-  easy: "全部为简单难度",
-  medium: "全部为中等难度",
-  hard: "全部为困难难度",
-}
-
-function extractJson(raw) {
-  let jsonStr = raw.trim()
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
-  if (jsonMatch) jsonStr = jsonMatch[1]
-  const firstBracket = jsonStr.indexOf("[")
-  const lastBracket = jsonStr.lastIndexOf("]")
-  if (firstBracket !== -1 && lastBracket > firstBracket) {
-    jsonStr = jsonStr.slice(firstBracket, lastBracket + 1)
-  }
-  return jsonStr
-}
-
 /** POST /api/knowledge/:id/generate — 基于知识库生成面试题 */
 router.post("/:id/generate", async (req, res) => {
   const { id } = req.params
-  const {
-    questionCount = 5,
-    difficulty = "all",
-    model = DEFAULT_MODEL,
-  } = req.body || {}
+  const count = clampNumber(req.body?.questionCount, 1, 20, 5)
+  const difficulty = validateEnum(req.body?.difficulty, ["all", "easy", "medium", "hard"], "all")
+  const model = sanitizeString(req.body?.model, { required: false }) || DEFAULT_MODEL
 
   try {
-    const meta = readMeta(id)
+    const meta = await readMeta(id)
     if (!meta) return res.status(404).json({ error: "知识库不存在" })
     if (!meta.files || meta.files.length === 0) {
       return res.status(400).json({ error: "知识库中没有文件" })
     }
 
-    // 聚合所有文件内容
-    const parts = meta.files.map((f) => {
-      const text = readFileContent(id, f.id) || ""
+    // 聚合所有文件内容（异步读取）
+    const parts = await Promise.all(meta.files.map(async (f) => {
+      const text = await readFileContent(id, f.id) || ""
       return `【文件：${f.name}】\n${text}`
-    })
+    }))
     let combined = parts.join("\n\n---\n\n")
 
     // 截断保护
@@ -289,25 +274,16 @@ router.post("/:id/generate", async (req, res) => {
       truncationNote = `\n\n（注意：知识库内容总量过大，此处仅保留前 ${MAX_CONTENT} 个字符。）`
     }
 
-    const count = Math.min(Math.max(questionCount, 1), 20)
-    const difficultyText = DIFFICULTY_MAP[difficulty] || DIFFICULTY_MAP.all
+    const difficultyText = DIFFICULTY_MAP[difficulty]
 
     const prompt = GENERATE_FROM_KB_PROMPT
       .replace("{content}", combined + truncationNote)
       .replace("{count}", String(count))
       .replace("{difficulty}", difficultyText)
 
-    const response = await openai.chat.completions.create({
-      model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.5,
-      max_tokens: 4000,
+    const questions = await callAI({
+      model, prompt, temperature: 0.5, maxTokens: 4000, logTag: "knowledge/generate",
     })
-
-    const raw = response.choices[0]?.message?.content || ""
-    console.log("[knowledge/generate] AI 原始返回:", raw.slice(0, 200))
-
-    const questions = JSON.parse(extractJson(raw))
 
     if (!Array.isArray(questions) || questions.length === 0) {
       return res.json({ questions: [], error: "AI 未能生成有效题目，请重试。" })
@@ -328,13 +304,9 @@ router.post("/:id/generate", async (req, res) => {
     console.log(`[knowledge/generate] 成功生成 ${result.length} 道题目`)
     res.json({ questions: result })
   } catch (err) {
-    console.error("[knowledge/generate] 生成失败:", err.message)
-    if (err instanceof SyntaxError) {
-      console.error("[knowledge/generate] JSON 解析失败")
-    }
-    res.json({
-      error: err?.message || "题目生成服务异常",
-      questions: [],
+    handleAIError(res, err, "knowledge/generate", {
+      fallbackMessage: "题目生成服务异常",
+      extras: { questions: [] },
     })
   }
 })

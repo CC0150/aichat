@@ -19,13 +19,13 @@ const isCodingQuestion = ref(false)
 const draftAnswers = reactive({})
 const followUpQuestion = ref('')
 const currentRound = ref(0)
-const useDeepMode = ref(true)    // 默认启用深度追问模式
+const useDeepMode = ref(true) // 默认启用深度追问模式
 
 const MAX_FOLLOW_UP_ROUNDS = 3
 
 /** 当前题目的对话轮次（追问次数） */
 const conversationRounds = computed(() =>
-  Math.floor((interviewStore.conversations[interviewStore.currentQuestion?.id]?.length || 0) / 2)
+  Math.floor((interviewStore.conversations[interviewStore.currentQuestion?.id]?.length || 0) / 2),
 )
 
 function handleQuit() {
@@ -84,30 +84,34 @@ function restoreDraft(qId) {
 }
 
 // 题目切换时恢复答案和追问状态
-watch(() => interviewStore.currentQuestion, (q, oldQ) => {
-  saveDraft(oldQ?.id)
-  scoreError.value = ''
-  isCodingQuestion.value = q?.type === 'coding'
-  if (q) {
-    restoreDraft(q.id)
-    // 恢复追问状态
-    const conv = interviewStore.conversations[q.id] || []
-    if (conv.length > 0 && !interviewStore.scores[q.id]) {
-      // 有对话记录且未完成 → 从最后一条 assistant 消息获取追问
-      const lastAssistant = [...conv].reverse().find((m) => m.role === 'assistant')
-      followUpQuestion.value = lastAssistant?.content || ''
-      currentRound.value = Math.floor(conv.length / 2)
+watch(
+  () => interviewStore.currentQuestion,
+  (q, oldQ) => {
+    saveDraft(oldQ?.id)
+    scoreError.value = ''
+    isCodingQuestion.value = q?.type === 'coding'
+    if (q) {
+      restoreDraft(q.id)
+      // 恢复追问状态
+      const conv = interviewStore.conversations[q.id] || []
+      if (conv.length > 0 && !interviewStore.scores[q.id]) {
+        // 有对话记录且未完成 → 从最后一条 assistant 消息获取追问
+        const lastAssistant = [...conv].reverse().find((m) => m.role === 'assistant')
+        followUpQuestion.value = lastAssistant?.content || ''
+        currentRound.value = Math.floor(conv.length / 2)
+      } else {
+        followUpQuestion.value = ''
+        currentRound.value = 0
+      }
     } else {
+      userAnswer.value = ''
+      codeAnswer.value = ''
       followUpQuestion.value = ''
       currentRound.value = 0
     }
-  } else {
-    userAnswer.value = ''
-    codeAnswer.value = ''
-    followUpQuestion.value = ''
-    currentRound.value = 0
-  }
-}, { immediate: true })
+  },
+  { immediate: true },
+)
 
 // 跳转到指定题目
 function handleGoToQuestion(index) {
@@ -136,12 +140,13 @@ async function handleSubmit() {
     const code = codeAnswer.value.trim()
     const text = userAnswer.value.trim()
     if (!code && !text) return
-    answer = [`[代码]\n${code || '(未编写代码)'}`, `[文字说明]\n${text || '(未填写说明)'}`].join('\n\n')
+    answer = [`[代码]\n${code || '(未编写代码)'}`, `[文字说明]\n${text || '(未填写说明)'}`].join(
+      '\n\n',
+    )
   } else {
     answer = userAnswer.value.trim()
     if (!answer) return
   }
-
 
   if (useDeepMode.value) {
     // 深度追问模式
@@ -255,7 +260,9 @@ function handleKeydown(e) {
     <!-- 进度条 -->
     <div class="shrink-0 border-b border-border bg-surface px-3 py-2.5 sm:px-6 sm:py-3">
       <div class="mb-1.5 flex items-center justify-between text-xs text-text-muted">
-        <span>第 {{ interviewStore.progress.current }} / {{ interviewStore.progress.total }} 题</span>
+        <span
+          >第 {{ interviewStore.progress.current }} / {{ interviewStore.progress.total }} 题</span
+        >
         <div class="flex items-center gap-3">
           <span>{{ interviewStore.progress.percentage }}%</span>
           <button
@@ -287,7 +294,8 @@ function handleKeydown(e) {
             'bg-primary text-white shadow-sm': getQuestionStatus(idx) === 'current',
             'bg-emerald-500/10 text-emerald-500': getQuestionStatus(idx) === 'scored',
             'bg-amber-500/10 text-amber-500': getQuestionStatus(idx) === 'draft',
-            'bg-surface-input text-text-muted hover:bg-surface-input/70 hover:text-text-secondary': getQuestionStatus(idx) === 'unanswered',
+            'bg-surface-input text-text-muted hover:bg-surface-input/70 hover:text-text-secondary':
+              getQuestionStatus(idx) === 'unanswered',
           }"
           :disabled="isScoring"
           @click="handleGoToQuestion(idx)"
@@ -310,18 +318,27 @@ function handleKeydown(e) {
           <span
             class="rounded-full px-2.5 py-0.5 text-xs font-medium"
             :class="{
-              'bg-emerald-500/10 text-emerald-500': interviewStore.currentQuestion?.difficulty === 'easy',
-              'bg-amber-500/10 text-amber-500': interviewStore.currentQuestion?.difficulty === 'medium',
+              'bg-emerald-500/10 text-emerald-500':
+                interviewStore.currentQuestion?.difficulty === 'easy',
+              'bg-amber-500/10 text-amber-500':
+                interviewStore.currentQuestion?.difficulty === 'medium',
               'bg-red-500/10 text-red-500': interviewStore.currentQuestion?.difficulty === 'hard',
             }"
           >
-            {{ interviewStore.currentQuestion?.difficulty === 'easy' ? '简单' : interviewStore.currentQuestion?.difficulty === 'medium' ? '中等' : '困难' }}
+            {{
+              interviewStore.currentQuestion?.difficulty === 'easy'
+                ? '简单'
+                : interviewStore.currentQuestion?.difficulty === 'medium'
+                  ? '中等'
+                  : '困难'
+            }}
           </span>
           <span
             v-for="tag in interviewStore.currentQuestion?.tags"
             :key="tag"
             class="rounded-full bg-surface-input px-2.5 py-0.5 text-xs text-text-secondary"
-          >{{ tag }}</span>
+            >{{ tag }}</span
+          >
         </div>
 
         <!-- 题目文字 -->
@@ -330,10 +347,7 @@ function handleKeydown(e) {
         </h2>
 
         <!-- 多轮对话历史 -->
-        <div
-          v-if="interviewStore.currentConversation.length > 0"
-          class="mb-5 space-y-3"
-        >
+        <div v-if="interviewStore.currentConversation.length > 0" class="mb-5 space-y-3">
           <div
             v-for="(msg, mi) in interviewStore.currentConversation"
             :key="mi"
@@ -342,16 +356,20 @@ function handleKeydown(e) {
           >
             <div
               class="max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed"
-              :class="msg.role === 'user'
-                ? 'bg-primary/10 text-text-primary border border-primary/15'
-                : 'bg-surface-input text-text-secondary border border-border'"
+              :class="
+                msg.role === 'user'
+                  ? 'bg-primary/10 text-text-primary border border-primary/15'
+                  : 'bg-surface-input text-text-secondary border border-border'
+              "
             >
-              <div class="mb-1 flex items-center gap-1.5 text-xs font-medium" :class="msg.role === 'user' ? 'text-primary' : 'text-text-muted'">
-                <Icon
-                  :icon="msg.role === 'user' ? 'lucide:user' : 'lucide:bot'"
-                  class="h-3 w-3"
-                />
-                <span>{{ msg.role === 'user' ? '你的回答' : `AI 追问 (第${Math.ceil((mi + 1) / 2)}轮)` }}</span>
+              <div
+                class="mb-1 flex items-center gap-1.5 text-xs font-medium"
+                :class="msg.role === 'user' ? 'text-primary' : 'text-text-muted'"
+              >
+                <Icon :icon="msg.role === 'user' ? 'lucide:user' : 'lucide:bot'" class="h-3 w-3" />
+                <span>{{
+                  msg.role === 'user' ? '你的回答' : `AI 追问 (第${Math.ceil((mi + 1) / 2)}轮)`
+                }}</span>
               </div>
               <p>{{ msg.content }}</p>
             </div>
@@ -365,7 +383,9 @@ function handleKeydown(e) {
         >
           <Icon icon="lucide:sparkles" class="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
           <div class="text-sm">
-            <span class="font-medium text-amber-500">AI 追问（第 {{ currentRound }}/{{ MAX_FOLLOW_UP_ROUNDS }} 轮）</span>
+            <span class="font-medium text-amber-500"
+              >AI 追问（第 {{ currentRound }}/{{ MAX_FOLLOW_UP_ROUNDS }} 轮）</span
+            >
             <p class="mt-1 text-text-secondary">{{ followUpQuestion }}</p>
           </div>
         </div>
@@ -378,7 +398,9 @@ function handleKeydown(e) {
               <Icon icon="lucide:code-2" class="h-4 w-4" />
               编写代码
             </label>
-            <div class="overflow-hidden rounded-xl border border-border bg-[#0d1117] transition-colors duration-200 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary-muted">
+            <div
+              class="overflow-hidden rounded-xl border border-border bg-[#0d1117] transition-colors duration-200 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary-muted"
+            >
               <div class="flex items-center justify-between border-b border-white/5 px-4 py-2">
                 <div class="flex items-center gap-1.5">
                   <span class="h-3 w-3 rounded-full bg-red-500/80" />
@@ -388,7 +410,9 @@ function handleKeydown(e) {
                 <span class="text-xs text-white/30">JavaScript</span>
               </div>
               <div class="flex">
-                <div class="select-none shrink-0 py-3 pl-4 pr-2 text-right font-mono text-xs leading-relaxed text-white/20">
+                <div
+                  class="select-none shrink-0 py-3 pl-4 pr-2 text-right font-mono text-xs leading-relaxed text-white/20"
+                >
                   <template v-for="i in Math.max(codeAnswer.split('\n').length, 6)" :key="i">
                     {{ i }}<br />
                   </template>
@@ -409,7 +433,9 @@ function handleKeydown(e) {
             </div>
 
             <!-- 代码题的文字说明区 -->
-            <label class="mb-2 mt-5 flex items-center gap-2 text-sm font-medium text-text-secondary">
+            <label
+              class="mb-2 mt-5 flex items-center gap-2 text-sm font-medium text-text-secondary"
+            >
               <Icon icon="lucide:file-text" class="h-4 w-4" />
               文字说明
             </label>
@@ -436,15 +462,22 @@ function handleKeydown(e) {
           </template>
 
           <div class="mt-3 flex items-center justify-between gap-2">
-            <span class="hidden text-xs text-text-muted sm:inline">{{ (codeAnswer.length + userAnswer.length) }} 字符</span>
+            <span class="hidden text-xs text-text-muted sm:inline"
+              >{{ codeAnswer.length + userAnswer.length }} 字符</span
+            >
             <button
               type="button"
               class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white transition-all duration-200 hover:bg-primary/90 disabled:opacity-50 sm:w-auto"
               :disabled="(!codeAnswer.trim() && !userAnswer.trim()) || isScoring"
               @click="handleSubmit"
             >
-              <span v-if="isScoring" class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-              <span v-else-if="currentRound > 0">补充回答（第 {{ currentRound }}/{{ MAX_FOLLOW_UP_ROUNDS }} 轮）</span>
+              <span
+                v-if="isScoring"
+                class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+              />
+              <span v-else-if="currentRound > 0"
+                >补充回答（第 {{ currentRound }}/{{ MAX_FOLLOW_UP_ROUNDS }} 轮）</span
+              >
               <span v-else>提交回答</span>
             </button>
           </div>
@@ -467,9 +500,11 @@ function handleKeydown(e) {
               >
                 <div
                   class="max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed"
-                  :class="msg.role === 'user'
-                    ? 'bg-primary/10 text-text-primary'
-                    : 'bg-surface-input text-text-secondary'"
+                  :class="
+                    msg.role === 'user'
+                      ? 'bg-primary/10 text-text-primary'
+                      : 'bg-surface-input text-text-secondary'
+                  "
                 >
                   <span class="font-medium">{{ msg.role === 'user' ? '你' : 'AI' }}</span>
                   <p class="mt-0.5">{{ msg.content }}</p>
@@ -484,8 +519,11 @@ function handleKeydown(e) {
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div class="text-center">
                 <div class="text-2xl font-bold text-primary">
-                  <template v-if="interviewStore.scores[interviewStore.currentQuestion?.id]?.score != null">
-                    {{ interviewStore.scores[interviewStore.currentQuestion?.id]?.score }}<span class="text-sm font-normal text-text-muted">/10</span>
+                  <template
+                    v-if="interviewStore.scores[interviewStore.currentQuestion?.id]?.score != null"
+                  >
+                    {{ interviewStore.scores[interviewStore.currentQuestion?.id]?.score
+                    }}<span class="text-sm font-normal text-text-muted">/10</span>
                   </template>
                   <template v-else>-</template>
                 </div>
@@ -493,8 +531,13 @@ function handleKeydown(e) {
               </div>
               <div class="text-center">
                 <div class="text-lg font-semibold text-text-primary">
-                  <template v-if="interviewStore.scores[interviewStore.currentQuestion?.id]?.correctness != null">
-                    {{ interviewStore.scores[interviewStore.currentQuestion?.id]?.correctness }}<span class="text-xs font-normal text-text-muted">/10</span>
+                  <template
+                    v-if="
+                      interviewStore.scores[interviewStore.currentQuestion?.id]?.correctness != null
+                    "
+                  >
+                    {{ interviewStore.scores[interviewStore.currentQuestion?.id]?.correctness
+                    }}<span class="text-xs font-normal text-text-muted">/10</span>
                   </template>
                   <template v-else>-</template>
                 </div>
@@ -502,8 +545,14 @@ function handleKeydown(e) {
               </div>
               <div class="text-center">
                 <div class="text-lg font-semibold text-text-primary">
-                  <template v-if="interviewStore.scores[interviewStore.currentQuestion?.id]?.completeness != null">
-                    {{ interviewStore.scores[interviewStore.currentQuestion?.id]?.completeness }}<span class="text-xs font-normal text-text-muted">/10</span>
+                  <template
+                    v-if="
+                      interviewStore.scores[interviewStore.currentQuestion?.id]?.completeness !=
+                      null
+                    "
+                  >
+                    {{ interviewStore.scores[interviewStore.currentQuestion?.id]?.completeness
+                    }}<span class="text-xs font-normal text-text-muted">/10</span>
                   </template>
                   <template v-else>-</template>
                 </div>
@@ -511,8 +560,13 @@ function handleKeydown(e) {
               </div>
               <div class="text-center">
                 <div class="text-lg font-semibold text-text-primary">
-                  <template v-if="interviewStore.scores[interviewStore.currentQuestion?.id]?.clarity != null">
-                    {{ interviewStore.scores[interviewStore.currentQuestion?.id]?.clarity }}<span class="text-xs font-normal text-text-muted">/10</span>
+                  <template
+                    v-if="
+                      interviewStore.scores[interviewStore.currentQuestion?.id]?.clarity != null
+                    "
+                  >
+                    {{ interviewStore.scores[interviewStore.currentQuestion?.id]?.clarity
+                    }}<span class="text-xs font-normal text-text-muted">/10</span>
                   </template>
                   <template v-else>-</template>
                 </div>
@@ -522,7 +576,10 @@ function handleKeydown(e) {
           </div>
 
           <!-- AI 评价 -->
-          <div v-if="interviewStore.scores[interviewStore.currentQuestion?.id]?.feedback" class="rounded-2xl border border-border bg-surface-elevated p-5">
+          <div
+            v-if="interviewStore.scores[interviewStore.currentQuestion?.id]?.feedback"
+            class="rounded-2xl border border-border bg-surface-elevated p-5"
+          >
             <h3 class="mb-2 text-sm font-semibold text-text-primary">AI 点评</h3>
             <p class="text-sm leading-relaxed text-text-secondary">
               {{ interviewStore.scores[interviewStore.currentQuestion?.id]?.feedback }}
@@ -530,14 +587,20 @@ function handleKeydown(e) {
           </div>
 
           <!-- 参考答案 -->
-          <div v-if="interviewStore.scores[interviewStore.currentQuestion?.id]?.improvedAnswer" class="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5">
+          <div
+            v-if="interviewStore.scores[interviewStore.currentQuestion?.id]?.improvedAnswer"
+            class="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5"
+          >
             <h3 class="mb-2 text-sm font-semibold text-emerald-500">参考回答</h3>
             <p class="text-sm leading-relaxed text-text-secondary">
               {{ interviewStore.scores[interviewStore.currentQuestion?.id]?.improvedAnswer }}
             </p>
           </div>
 
-          <div v-if="scoreError" class="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-500">
+          <div
+            v-if="scoreError"
+            class="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-500"
+          >
             {{ scoreError }}
           </div>
 
@@ -558,33 +621,17 @@ function handleKeydown(e) {
 </template>
 
 <style scoped>
-.thin-scrollbar::-webkit-scrollbar {
-  width: 4px;
-}
-.thin-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-.thin-scrollbar::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 2px;
-  transition: background 0.3s;
-}
-.thin-scrollbar:hover::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.3);
-}
-.thin-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.5);
-}
-.thin-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-
 .animate-fade-in {
   animation: fadeIn 0.3s ease-out;
 }
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>

@@ -1,9 +1,15 @@
-import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist'
-import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import mammoth from 'mammoth/mammoth.browser'
 
-// 配置 pdf.js worker（适配 Vite 构建）
-GlobalWorkerOptions.workerSrc = pdfWorkerSrc
+let _pdfJsReady = false
+async function ensurePdfJs() {
+  if (_pdfJsReady) return
+  const [pdfjs, workerSrc] = await Promise.all([
+    import('pdfjs-dist'),
+    import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
+  ])
+  pdfjs.GlobalWorkerOptions.workerSrc = workerSrc.default
+  _pdfJsReady = true
+}
 
 /**
  * 从文件名中提取扩展名（小写、含点号）
@@ -23,6 +29,8 @@ function getExt(name = '') {
  * @returns {Promise<string>} 抽取的纯文本
  */
 async function parsePdf(file) {
+  await ensurePdfJs()
+  const { getDocument } = await import('pdfjs-dist')
   const arrayBuffer = await file.arrayBuffer()
   const loadingTask = getDocument({ data: arrayBuffer })
   const pdf = await loadingTask.promise
@@ -105,4 +113,3 @@ export async function parseFile(file) {
     throw new Error(`解析文件「${name}」失败：${msg}`)
   }
 }
-

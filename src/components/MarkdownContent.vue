@@ -49,7 +49,9 @@ function handleCopyCode(e) {
     if (span) {
       const old = span.textContent
       span.textContent = 'Copied'
-      setTimeout(() => { span.textContent = old }, 1500)
+      setTimeout(() => {
+        span.textContent = old
+      }, 1500)
     }
   } catch (_) {}
 }

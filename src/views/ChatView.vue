@@ -18,7 +18,7 @@ watch(
   (id) => {
     chatStore.setCurrentChat(id ?? null)
   },
-  { immediate: true }
+  { immediate: true },
 )
 
 // 处理打开重命名模态框的事件
@@ -41,8 +41,13 @@ function handleSendMessage(content) {
 
 <template>
   <div class="flex h-full flex-col">
-    <ChatHeader @openRenameModal="handleOpenRenameModal" />
-    <MessageArea :showRenameModal="showRenameModal" @closeRenameModal="handleCloseRenameModal" @sendMessage="handleSendMessage" @continueGenerate="chatInputRef?.continueGeneration()" />
+    <ChatHeader @open-rename-modal="handleOpenRenameModal" />
+    <MessageArea
+      :show-rename-modal="showRenameModal"
+      @close-rename-modal="handleCloseRenameModal"
+      @send-message="handleSendMessage"
+      @continue-generate="chatInputRef?.continueGeneration()"
+    />
     <ChatInput ref="chatInputRef" />
   </div>
 </template>
