@@ -258,6 +258,7 @@ function goToChat() {
 }
 
 import { getScoreColor, getScoreBg } from '@/utils/interviewHelpers'
+import { exportRecords } from '@/utils/interviewExport'
 
 // 结束后的统计
 const resultStats = computed(() => ({
@@ -267,6 +268,33 @@ const resultStats = computed(() => ({
   questions: interviewStore.questions,
   scores: interviewStore.scores,
 }))
+
+const showExportMenu = ref(false)
+const exportFormat = ref('md')
+
+function buildCurrentRecord() {
+  const typeConfig = interviewTypes[interviewStore.interviewType]
+  return {
+    typeLabel: typeConfig?.label || interviewStore.customSource || '面试记录',
+    customSource: interviewStore.customSource,
+    finishedAt: new Date().toISOString(),
+    totalScore: interviewStore.totalScore,
+    questions: interviewStore.questions,
+    answers: interviewStore.answers,
+    scores: interviewStore.scores,
+    conversations: interviewStore.conversations,
+  }
+}
+
+function handleExport(format) {
+  exportFormat.value = format
+  exportRecords([buildCurrentRecord()], format)
+  showExportMenu.value = false
+}
+
+function handleExportBackdropClick(e) {
+  if (e.target === e.currentTarget) showExportMenu.value = false
+}
 </script>
 
 <template>
@@ -815,6 +843,49 @@ const resultStats = computed(() => ({
             <Icon icon="lucide:rotate-cw" class="h-4 w-4" />
             再来一次
           </button>
+          <!-- 导出按钮 -->
+          <div class="relative">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-xl border border-border px-4 py-2.5 text-sm text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary"
+              @click="showExportMenu = !showExportMenu"
+            >
+              <Icon icon="lucide:download" class="h-4 w-4" />
+              导出本次面试
+            </button>
+            <Teleport to="body">
+              <div
+                v-if="showExportMenu"
+                class="fixed inset-0 z-[999]"
+                @click="handleExportBackdropClick"
+              />
+            </Teleport>
+            <Transition name="export-menu">
+              <div
+                v-if="showExportMenu"
+                class="absolute left-1/2 top-full z-[1001] mt-1 -translate-x-1/2"
+              >
+                <div
+                  class="overflow-hidden rounded-xl border border-border bg-surface-elevated p-1 shadow-lg"
+                >
+                  <button
+                    type="button"
+                    class="block w-full rounded-lg px-4 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary whitespace-nowrap"
+                    @click="handleExport('md')"
+                  >
+                    Markdown (.md)
+                  </button>
+                  <button
+                    type="button"
+                    class="block w-full rounded-lg px-4 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary whitespace-nowrap"
+                    @click="handleExport('txt')"
+                  >
+                    纯文本 (.txt)
+                  </button>
+                </div>
+              </div>
+            </Transition>
+          </div>
           <div class="flex items-center gap-1.5 text-xs text-text-muted">
             <Icon icon="lucide:lightbulb" class="h-3.5 w-3.5 shrink-0" />
             去 AI 对话中引用面试记录，分析薄弱点
@@ -832,4 +903,16 @@ const resultStats = computed(() => ({
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+.export-menu-enter-active,
+.export-menu-leave-active {
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+.export-menu-enter-from,
+.export-menu-leave-to {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.97);
+}
+</style>

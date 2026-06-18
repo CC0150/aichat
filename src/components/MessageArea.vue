@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, shallowRef, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
@@ -43,11 +43,32 @@ watch(
 
 const isEmpty = computed(() => chatStore.currentMessages.length === 0)
 
-const virtualMessages = computed(() =>
-  chatStore.currentMessages.map((m, index) => ({
-    ...m,
-    id: m.id || `${chatStore.currentChatId || 'chat'}-${index}`,
-  })),
+// shallowRef：数组引用只在结构变化（新增/删除/切会话）时替换
+// 流式输出时内容变化通过 Pinia reactive 对象驱动模板局部重渲染，避免全量 spread
+const virtualMessages = shallowRef([])
+
+function ensureMessageId(msg, index) {
+  if (!msg.id) {
+    msg.id = `${chatStore.currentChatId || 'chat'}-${index}`
+  }
+  return msg
+}
+
+function syncVirtualMessages() {
+  virtualMessages.value = chatStore.currentMessages.map((m, i) => ensureMessageId(m, i))
+}
+
+syncVirtualMessages()
+
+// 消息增删时重建数组
+watch(
+  () => chatStore.currentMessages.length,
+  () => syncVirtualMessages(),
+)
+// 切会话时重建数组（消息内容完全不同）
+watch(
+  () => chatStore.currentChatId,
+  () => syncVirtualMessages(),
 )
 
 const suggestions = [
@@ -95,9 +116,16 @@ function isNearBottom(el, thresholdPx = AUTO_SCROLL_THRESHOLD_PX) {
   return distance <= thresholdPx
 }
 
+let scrollTicking = false
+
 function onScrollerScroll(e) {
-  const el = e?.target || e?.event?.target
-  shouldAutoScroll.value = isNearBottom(el)
+  if (scrollTicking) return
+  scrollTicking = true
+  requestAnimationFrame(() => {
+    scrollTicking = false
+    const el = e?.target || e?.event?.target
+    shouldAutoScroll.value = isNearBottom(el)
+  })
 }
 
 let boundScrollEl = null
@@ -312,7 +340,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="relative flex flex-1 flex-col overflow-hidden">
+  <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
     <!-- ===== Empty State ===== -->
     <template v-if="isEmpty">
       <div class="relative flex flex-1 flex-col items-center justify-center px-6">
@@ -395,14 +423,14 @@ onUnmounted(() => {
         aria-live="polite"
         aria-label="对话内容"
         :items="virtualMessages"
-        :min-item-size="50"
+        :min-item-size="120"
         key-field="id"
         style="overflow-anchor: none"
       >
         <template #default="{ item, index, active }">
           <DynamicScrollerItem :item="item" :index="index" :active="active">
             <div
-              class="mx-auto max-w-3xl group/message mb-5"
+              class="mx-auto max-w-3xl group/message mb-8"
               :class="item.role === 'user' ? 'flex justify-end' : ''"
             >
               <!-- User message -->
@@ -734,4 +762,5 @@ onUnmounted(() => {
 .suggestion-card:hover::before {
   opacity: 1;
 }
+
 </style>

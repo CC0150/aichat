@@ -1,7 +1,7 @@
 const { Router } = require("express");
 const { writeSSEHeaders } = require("../middleware");
 const { streamChat } = require("../services/deepseek");
-const { DEFAULT_MODEL } = require("../config");
+const { DEFAULT_MODEL, sanitizeModel } = require("../config");
 
 const router = Router();
 
@@ -13,7 +13,8 @@ const router = Router();
 router.post("/", async (req, res) => {
   writeSSEHeaders(res);
 
-  const { model = DEFAULT_MODEL, messages = [] } = req.body || {};
+  const { model: rawModel = DEFAULT_MODEL, messages = [] } = req.body || {};
+  const model = sanitizeModel(rawModel);
 
   if (!messages.length) {
     res.write(`data: ${JSON.stringify({ error: "messages 不能为空" })}\n\n`);

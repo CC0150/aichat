@@ -5,7 +5,9 @@
       "Bash(npm install:*)",
       "Bash(node -e ':*)",
       "Bash(ls E:\\\\\\\\web\\\\\\\\vue\\\\\\\\aichat\\\\\\\\src\\\\\\\\utils\\\\\\\\:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npx prettier:*)"
     ]
   }
 }

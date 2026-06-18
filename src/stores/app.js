@@ -65,6 +65,10 @@ export const useAppStore = defineStore(
 
     // 当前选中的模型 id（与 ChatInput 模型切换、MessageArea 重新生成共用，避免切换模型后仍用错 key/模型）
     const currentModelId = ref(modelOptions[0]?.id ?? 'deepseek-v4-flash')
+    // 防止 localStorage 残留旧模型 id 导致 API 报错
+    if (!modelOptions.some((m) => m.id === currentModelId.value)) {
+      currentModelId.value = modelOptions[0]?.id ?? 'deepseek-v4-flash'
+    }
     const currentModel = computed(() => getModelById(currentModelId.value))
 
     /**

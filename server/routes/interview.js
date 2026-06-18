@@ -1,5 +1,5 @@
 const { Router } = require("express")
-const { DEFAULT_MODEL } = require("../config")
+const { DEFAULT_MODEL, sanitizeModel } = require("../config")
 const { callAI } = require("../services/aiCompletions")
 const { handleAIError } = require("../services/errorHandler")
 const { sanitizeString, clampNumber } = require("../utils/validate")
@@ -58,7 +58,7 @@ router.post("/score", async (req, res) => {
   const question = sanitizeString(req.body?.question, { maxLength: 2000 })
   const userAnswer = sanitizeString(req.body?.userAnswer, { maxLength: 5000 })
   const answerPoints = req.body?.answerPoints
-  const model = sanitizeString(req.body?.model, { required: false }) || DEFAULT_MODEL
+  const model = sanitizeModel(sanitizeString(req.body?.model, { required: false }))
 
   if (!question || !userAnswer) {
     return res.status(400).json({ error: "question 和 userAnswer 为必填字段" })
@@ -103,7 +103,7 @@ router.post("/evaluate", async (req, res) => {
     model = DEFAULT_MODEL,
   } = req.body || {}
   const safeQuestion = sanitizeString(question, { maxLength: 2000 })
-  const safeModel = sanitizeString(model, { required: false }) || DEFAULT_MODEL
+  const safeModel = sanitizeModel(sanitizeString(model, { required: false }))
 
   if (!safeQuestion || !conversationHistory.length) {
     return res.status(400).json({ error: "question 和 conversationHistory 为必填字段" })

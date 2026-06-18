@@ -1,3 +1,32 @@
+import { estimateMessagesTokens } from './tokenCounter'
+
+/**
+ * 基于 token 预算裁剪消息历史，始终保留 system message 和最后一条消息
+ * @param {Array<{ role: string, content: any }>} messages
+ * @param {number} maxTokens - 上下文窗口总 token 数
+ * @returns {Array<{ role: string, content: any }>}
+ */
+export function trimByTokenBudget(messages, maxTokens) {
+  if (!messages.length) return messages
+  const RESPONSE_RESERVE = 8000
+  const budget = maxTokens - RESPONSE_RESERVE
+
+  const systemMsg = messages[0]?.role === 'system' ? messages[0] : null
+  const lastMsg = messages[messages.length - 1]
+  const middle = systemMsg ? messages.slice(1, -1) : messages.slice(0, -1)
+
+  let used = estimateMessagesTokens([systemMsg, lastMsg].filter(Boolean))
+  const kept = []
+  for (let i = middle.length - 1; i >= 0; i--) {
+    const t = estimateMessagesTokens([middle[i]])
+    if (used + t > budget) break
+    used += t
+    kept.unshift(middle[i])
+  }
+
+  return [systemMsg, ...kept, lastMsg].filter(Boolean)
+}
+
 /**
  * 构造带有附件上下文与多模态图片的 messages 列表
  * 同时返回是否存在图片（用于自动切换视觉模型）
@@ -8,6 +37,7 @@
  * @param {{ id: string, name: string, text: string, type: 'pdf' | 'word' | 'text' }[]} options.attachments
  * @param {{ id: string, name: string, url: string, file: File }[]} options.images
  * @param {number} options.maxContextChars - 附件文本截断上限
+ * @param {number} options.maxTokens - 模型上下文窗口 token 数（默认 128000）
  * @param {boolean} options.supportsVision - 当前模型是否支持图像理解（如 DeepSeek 文本模型为 false）
  * @returns {Promise<{ messages: Array<{ role: string, content: any }>, historyHasImages: boolean }>}
  */
@@ -17,12 +47,13 @@ export async function buildMessagesWithContext({
   attachments = [],
   images = [],
   maxContextChars = 8000,
+  maxTokens = 128000,
   supportsVision = true,
 }) {
   const hasImages = images.length > 0
 
-  // 1）基础消息：最近 10 条；当前轮仅图片/仅附件时最后一条用户消息可能为空，需保留
-  const recent = history.slice(-10)
+  // 1）基础消息：全部历史消息（后续由 token 预算裁剪）；当前轮仅图片/仅附件时最后一条用户消息可能为空，需保留
+  const recent = history
   const hasCurrentAttachments = attachments.length > 0
   const hasCurrentImages = images.length > 0
   let messages = recent
@@ -121,6 +152,9 @@ export async function buildMessagesWithContext({
       }
     }
   }
+
+  // 5）token 预算裁剪
+  messages = trimByTokenBudget(messages, maxTokens)
 
   return { messages, historyHasImages }
 }

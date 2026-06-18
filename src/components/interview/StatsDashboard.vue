@@ -13,32 +13,21 @@ import {
   difficultyColor,
 } from '@/utils/interviewHelpers'
 import Modal from '@/components/Modal.vue'
+import { exportRecords } from '@/utils/interviewExport'
 
 Chart.register(...registerables)
 
 const interviewStore = useInterviewStore()
 
-function exportRecords() {
+const showExportMenu = ref(false)
+const exportFormat = ref('md')
+
+function handleExport(format) {
+  exportFormat.value = format
   const records = interviewStore.history
-  const data = records.map((r) => ({
-    type: r.typeLabel || '面试',
-    date: r.date,
-    totalScore: r.totalScore,
-    questionCount: r.questions?.length || 0,
-    details:
-      r.questions?.map((q) => ({
-        question: q.question,
-        score: r.scores[q.id]?.score ?? '-',
-        feedback: r.scores[q.id]?.feedback ?? '',
-      })) || [],
-  }))
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `intervy-export-${new Date().toISOString().slice(0, 10)}.json`
-  a.click()
-  URL.revokeObjectURL(url)
+  if (records.length === 0) return
+  exportRecords(records, format)
+  showExportMenu.value = false
 }
 
 const radarCanvas = ref(null)
@@ -291,6 +280,10 @@ function detailWeakPoints(record) {
 function handleDetailBackdropClick(e) {
   if (e.target === e.currentTarget) closeDetail()
 }
+
+function handleExportBackdropClick(e) {
+  if (e.target === e.currentTarget) showExportMenu.value = false
+}
 </script>
 
 <template>
@@ -311,14 +304,51 @@ function handleDetailBackdropClick(e) {
         <!-- 概览条 -->
         <div class="mb-4 flex items-center justify-between">
           <h2 class="text-lg font-semibold text-text-primary">面试记录</h2>
-          <button
-            type="button"
-            class="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary"
-            @click="exportRecords"
-          >
-            <Icon icon="lucide:download" class="h-3.5 w-3.5" />
-            导出
-          </button>
+          <div class="relative">
+            <button
+              type="button"
+              class="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary"
+              @click="showExportMenu = !showExportMenu"
+            >
+              <Icon icon="lucide:download" class="h-3.5 w-3.5" />
+              导出
+            </button>
+            <Teleport to="body">
+              <div
+                v-if="showExportMenu"
+                class="fixed inset-0 z-[999]"
+                @click="handleExportBackdropClick"
+              />
+            </Teleport>
+            <Transition name="export-menu">
+              <div
+                v-if="showExportMenu"
+                class="absolute right-0 top-full z-[1001] mt-1 overflow-hidden rounded-xl border border-border bg-surface-elevated p-1 shadow-lg"
+              >
+                <button
+                  type="button"
+                  class="block w-full rounded-lg px-4 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary whitespace-nowrap"
+                  @click="handleExport('md')"
+                >
+                  Markdown (.md)
+                </button>
+                <button
+                  type="button"
+                  class="block w-full rounded-lg px-4 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary whitespace-nowrap"
+                  @click="handleExport('txt')"
+                >
+                  纯文本 (.txt)
+                </button>
+                <button
+                  type="button"
+                  class="block w-full rounded-lg px-4 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary whitespace-nowrap"
+                  @click="handleExport('json')"
+                >
+                  JSON (.json)
+                </button>
+              </div>
+            </Transition>
+          </div>
         </div>
         <div class="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4 animate-fade-up">
           <div class="stat-card rounded-2xl border border-border bg-surface-elevated p-4 sm:p-5">
@@ -903,5 +933,25 @@ function handleDetailBackdropClick(e) {
 .modal-leave-to > :not(style) {
   opacity: 0;
   transform: scale(0.98);
+}
+
+/* Export menu */
+.export-menu-enter-active {
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+.export-menu-leave-active {
+  transition:
+    opacity 0.1s ease,
+    transform 0.1s ease;
+}
+.export-menu-enter-from {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.96);
+}
+.export-menu-leave-to {
+  opacity: 0;
+  transform: translateY(-2px) scale(0.98);
 }
 </style>

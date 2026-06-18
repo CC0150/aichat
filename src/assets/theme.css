@@ -44,7 +44,7 @@ body {
   @apply antialiased;
   background-color: var(--color-background);
   color: var(--color-text-primary);
-  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
 }
 
 /* Hide scrollbar but keep scroll */
@@ -58,12 +58,27 @@ body {
 }
 
 /* Thin scrollbar — shared across all scrollable panels */
-.thin-scrollbar::-webkit-scrollbar { width: 4px; }
-.thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.thin-scrollbar::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; transition: background 0.3s; }
-.thin-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); }
-.thin-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.5); }
-.thin-scrollbar { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.thin-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 2px;
+  transition: background 0.3s;
+}
+.thin-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+}
+.thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
+.thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
 
 /* floating-vue tooltip */
 .v-popper--theme-tooltip .v-popper__inner {
@@ -82,7 +97,9 @@ body {
 /* Attachment chips — slide in */
 .attachment-slide-enter-active,
 .attachment-slide-leave-active {
-  transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .attachment-slide-enter-from {
   opacity: 0;
@@ -99,7 +116,9 @@ body {
 /* Image thumbnails — slide in */
 .image-slide-enter-active,
 .image-slide-leave-active {
-  transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .image-slide-enter-from {
   opacity: 0;
@@ -115,7 +134,9 @@ body {
 
 /* Message entrance animation */
 .message-enter-active {
-  transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1), transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition:
+    opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .message-enter-from {
   opacity: 0;
@@ -124,6 +145,7 @@ body {
 
 /* Spring sidebar transition */
 .sidebar-transition {
-  transition: width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
-              transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }

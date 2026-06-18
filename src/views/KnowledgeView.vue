@@ -47,6 +47,11 @@ function confirmDeleteKB(kb) {
   showDeleteModal.value = true
 }
 
+function closeDeleteModal() {
+  showDeleteModal.value = false
+  deleteTarget.value = null
+}
+
 async function handleDeleteKB() {
   if (!deleteTarget.value) return
   await store.deleteKB(deleteTarget.value.id)
@@ -396,10 +401,7 @@ function formatFileSize(charCount) {
       confirm-text="删除"
       cancel-text="取消"
       confirm-variant="danger"
-      @close="
-        showDeleteModal = false
-        deleteTarget = null
-      "
+      @close="closeDeleteModal"
       @confirm="handleDeleteKB"
     >
       <p class="text-sm text-text-secondary">

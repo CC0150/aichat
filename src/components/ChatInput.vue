@@ -6,7 +6,7 @@ import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useInterviewStore } from '@/stores/interview'
 import { requestChatStream, autoResize as autoResizeTextarea, isAbortError } from '@/utils'
-import { buildMessagesWithContext } from '@/utils/messageBuilder'
+import { buildMessagesWithContext, trimByTokenBudget } from '@/utils/messageBuilder'
 import { difficultyMap } from '@/utils/interviewHelpers'
 import { parseFile } from '@/utils/docParser'
 import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
@@ -289,8 +289,8 @@ function onSendOrStop() {
 }
 
 function buildMessagesForContinue() {
-  const raw = chatStore.currentMessages.slice(-20)
-  return raw
+  const raw = chatStore.currentMessages
+  const messages = raw
     .filter((m) => {
       if (!m) return false
       const c = m.content
@@ -307,6 +307,7 @@ function buildMessagesForContinue() {
       }
       return { role: m.role, content }
     })
+  return trimByTokenBudget(messages, appStore.currentModel?.contextWindow ?? 128000)
 }
 
 async function continueGeneration() {
@@ -405,6 +406,7 @@ async function sendMessage(content) {
       attachments: attachments.value,
       images: images.value,
       maxContextChars: MAX_CONTEXT_CHARS,
+      maxTokens: appStore.currentModel?.contextWindow ?? 128000,
       supportsVision: appStore.currentModel?.supportsVision ?? false,
     })
 
@@ -571,10 +573,7 @@ defineExpose({ sendMessage, continueGeneration })
           type="button"
           class="absolute right-0 top-1 flex h-6 w-6 items-center justify-center rounded-md text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary"
           aria-label="清空输入内容"
-          @click="
-            input = ''
-            textareaRef?.focus()
-          "
+          @click="((input = ''), textareaRef?.focus())"
         >
           <Icon icon="lucide:x" class="h-4 w-4" />
         </button>

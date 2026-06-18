@@ -40,7 +40,7 @@ function handleSendMessage(content) {
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
+  <div class="flex h-full min-h-0 flex-col">
     <ChatHeader @open-rename-modal="handleOpenRenameModal" />
     <MessageArea
       :show-rename-modal="showRenameModal"

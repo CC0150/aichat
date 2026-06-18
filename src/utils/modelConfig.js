@@ -4,6 +4,7 @@ export const modelOptions = [
     label: 'DeepSeek V4 Flash',
     shortLabel: 'V4 Flash',
     model: 'deepseek-v4-flash',
+    contextWindow: 128000,
     supportsVision: false,
   },
   {
@@ -11,6 +12,7 @@ export const modelOptions = [
     label: 'DeepSeek V4 Pro',
     shortLabel: 'V4 Pro',
     model: 'deepseek-v4-pro',
+    contextWindow: 128000,
     supportsVision: false,
   },
 ]
