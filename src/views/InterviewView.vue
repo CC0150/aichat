@@ -11,44 +11,65 @@ import { useKnowledgeStore } from '@/stores/knowledge'
 import InterviewSession from '@/components/interview/InterviewSession.vue'
 
 const router = useRouter()
+/** 面试状态（阶段、题目、答案、分数等） */
 const interviewStore = useInterviewStore()
+/** 全局应用状态（当前模型等） */
 const appStore = useAppStore()
+/** 知识库状态（列表、文件等） */
 const knowledgeStore = useKnowledgeStore()
 
-const activeTab = ref('bank') // 'bank' | 'file' | 'knowledge'
+/** 当前出题模式标签：'bank'（题库）| 'file'（文件）| 'knowledge'（知识库） */
+const activeTab = ref('bank')
+/** 题库模式中选中的预设类型 key（如 'frontend', 'js-core'）或自定义岗位字符串 */
 const selectedType = ref(null)
 
+/** 切换出题模式，切换到知识库时自动加载列表 */
 function switchTab(tab) {
   activeTab.value = tab
   if (tab === 'knowledge') {
     knowledgeStore.fetchKBs()
   }
 }
+/** 题目数量（默认 5 题） */
 const questionCount = ref(5)
+/** 难度选择：'all' | 'easy' | 'medium' | 'hard' */
 const difficulty = ref('all')
 
+/** 题库预设类型选项：从 interviewTypes 配置转换而来 */
 const typeOptions = Object.entries(interviewTypes).map(([key, val]) => ({
   key,
   ...val,
 }))
 
+/** 题目数量预设值 */
 const countPresets = [5, 8, 10, 15]
+/** 是否正在使用自定义题目数量输入 */
 const isCustomCount = ref(false)
+/** 自定义题目数量的输入文本 */
 const customCountInput = ref('')
+/** 自定义数量 input DOM 引用 */
 const countInputRef = ref(null)
+/** 最大题目数上限 */
 const MAX_QUESTIONS = 50
 
+/** 选择预设题目数量 */
 function selectCountPreset(n) {
   questionCount.value = n
   isCustomCount.value = false
 }
 
+/** 切换到自定义题目数量输入模式 */
 function enableCustomCount() {
   isCustomCount.value = true
   customCountInput.value = String(questionCount.value)
+  // RAF 确保 input 渲染后再聚焦
   requestAnimationFrame(() => countInputRef.value?.focus())
 }
 
+/**
+ * 应用自定义题目数量
+ * 校验输入合法性（>=1 的数字），超出 MAX_QUESTIONS 则取上限
+ */
 function applyCustomCount() {
   const n = parseInt(customCountInput.value, 10)
   if (!isNaN(n) && n >= 1) {
@@ -59,6 +80,7 @@ function applyCustomCount() {
   isCustomCount.value = false
 }
 
+/** 自定义数量输入框键盘处理：Enter 确认，Escape 取消 */
 function onCustomKeydown(e) {
   if (e.key === 'Enter') applyCustomCount()
   if (e.key === 'Escape') {
@@ -67,6 +89,7 @@ function onCustomKeydown(e) {
   }
 }
 
+/** 难度选项配置 */
 const difficultyOptions = [
   { value: 'all', label: '混合' },
   { value: 'easy', label: '简单' },
@@ -75,16 +98,26 @@ const difficultyOptions = [
 ]
 
 // ===== 文件出题模式 =====
+/** 文件选择 input DOM 引用 */
 const fileInputRef = ref(null)
-const uploadedFile = ref(null) // { name, text, type }
+/** 已上传并解析成功的文件：{ name, text, type } */
+const uploadedFile = ref(null)
+/** 是否正在解析文件 */
 const isParsing = ref(false)
+/** 是否正在调用 AI 生成题目 */
 const isGenerating = ref(false)
+/** 文件模式的错误信息 */
 const fileError = ref('')
 
+/** 触发文件选择对话框 */
 function triggerFileSelect() {
   if (fileInputRef.value) fileInputRef.value.click()
 }
 
+/**
+ * 处理文件上传并解析
+ * 内容需 >= 50 字才接受，太短会提示上传更丰富的文档
+ */
 async function handleFileUpload(event) {
   const files = Array.from(event.target.files || [])
   if (!files.length) return
@@ -108,11 +141,16 @@ async function handleFileUpload(event) {
   }
 }
 
+/** 移除已上传的文件 */
 function removeUploadedFile() {
   uploadedFile.value = null
   fileError.value = ''
 }
 
+/**
+ * 基于上传文件内容生成面试题并开始面试
+ * 调用 /api/questions/generate 接口，AI 根据文件内容+题目数+难度生成题目
+ */
 async function startFileInterview() {
   if (!uploadedFile.value || isGenerating.value) return
   isGenerating.value = true
@@ -137,15 +175,23 @@ async function startFileInterview() {
 }
 
 // ===== 知识库出题模式 =====
+/** 选中的知识库 ID */
 const selectedKBId = ref(null)
+/** 是否正在调用 AI 从知识库生成题目 */
 const isKBGenerating = ref(false)
+/** 知识库模式的错误信息 */
 const kbError = ref('')
 
+/** 选择知识库（清除之前的错误） */
 function selectKB(kbId) {
   selectedKBId.value = kbId
   kbError.value = ''
 }
 
+/**
+ * 基于知识库内容生成面试题并开始面试
+ * 调用 store.generateQuestions → /api/knowledge/:id/generate
+ */
 async function startKBInterview() {
   if (!selectedKBId.value || isKBGenerating.value) return
   isKBGenerating.value = true
@@ -171,11 +217,16 @@ async function startKBInterview() {
 
 // ===== 题库模式 =====
 
+/** 自定义岗位输入文本 */
 const customRole = ref('')
+/** 是否选择了自定义岗位（与预设类型互斥） */
 const isCustomRole = ref(false)
+/** 是否正在为自定义岗位生成题目 */
 const isRoleGenerating = ref(false)
+/** 自定义岗位的错误信息 */
 const roleError = ref('')
 
+/** 确认自定义岗位输入，将其设为当前选中的类型 */
 function selectCustomRole() {
   const role = customRole.value.trim()
   if (!role) return
@@ -184,10 +235,15 @@ function selectCustomRole() {
   roleError.value = ''
 }
 
+/** 自定义岗位输入框回车确认 */
 function onRoleKeydown(e) {
   if (e.key === 'Enter') selectCustomRole()
 }
 
+/**
+ * 选择预设面试类型（如 frontend, js-core 等）
+ * 自动应用该类型的默认题目数量
+ */
 function selectType(key) {
   selectedType.value = key
   isCustomRole.value = false
@@ -199,6 +255,10 @@ function selectType(key) {
   roleError.value = ''
 }
 
+/**
+ * 自定义岗位模式：调用 AI 按岗位角色生成面试题
+ * 调用 /api/questions/generate-by-role 接口
+ */
 async function startRoleInterview() {
   if (!selectedType.value || isRoleGenerating.value) return
   isRoleGenerating.value = true
@@ -222,12 +282,16 @@ async function startRoleInterview() {
   }
 }
 
+/** 题库预设模式：直接从本地题库抽取题目开始面试 */
 function startInterview() {
   if (!selectedType.value) return
   interviewStore.startInterview(selectedType.value, questionCount.value, difficulty.value)
 }
 
-// 页面挂载时修复可能的不一致状态
+/**
+ * 页面挂载时修复可能的不一致状态
+ * 如面试阶段不在 idle/finished 但没有 currentQuestion → 重置
+ */
 onMounted(() => {
   if (
     interviewStore.phase !== 'idle' &&
@@ -238,6 +302,7 @@ onMounted(() => {
   }
 })
 
+/** 返回首页（重置所有状态到初始值） */
 function backToHome() {
   interviewStore.resetInterview()
   selectedType.value = null
@@ -253,6 +318,7 @@ function backToHome() {
   activeTab.value = 'bank'
 }
 
+/** 导航到 AI 对话页面 */
 function goToChat() {
   router.push({ name: 'Chat' })
 }
@@ -261,6 +327,7 @@ import { getScoreColor, getScoreBg } from '@/utils/interviewHelpers'
 import { exportRecords } from '@/utils/interviewExport'
 
 // 结束后的统计
+/** 面试结果统计数据（总分、分类得分、薄弱点等） */
 const resultStats = computed(() => ({
   totalScore: interviewStore.totalScore,
   categoryStats: interviewStore.categoryStats,
@@ -269,9 +336,15 @@ const resultStats = computed(() => ({
   scores: interviewStore.scores,
 }))
 
+/** 导出菜单是否可见 */
 const showExportMenu = ref(false)
+/** 当前选择的导出格式 */
 const exportFormat = ref('md')
 
+/**
+ * 构建当前面试记录对象（用于导出）
+ * 合并面试类型标签、题目、答案、分数、对话记录等
+ */
 function buildCurrentRecord() {
   const typeConfig = interviewTypes[interviewStore.interviewType]
   return {
@@ -286,12 +359,14 @@ function buildCurrentRecord() {
   }
 }
 
+/** 执行导出：触发浏览器下载 */
 function handleExport(format) {
   exportFormat.value = format
   exportRecords([buildCurrentRecord()], format)
   showExportMenu.value = false
 }
 
+/** 点击导出菜单遮罩层关闭 */
 function handleExportBackdropClick(e) {
   if (e.target === e.currentTarget) showExportMenu.value = false
 }

@@ -1,6 +1,14 @@
 <script setup>
 import { ref, watch } from 'vue'
 
+/**
+ * 通用弹窗组件
+ * @param {boolean} show - 是否显示弹窗
+ * @param {string} title - 弹窗标题
+ * @param {string} confirmText - 确认按钮文字
+ * @param {string} cancelText - 取消按钮文字
+ * @param {'primary'|'danger'} confirmVariant - 确认按钮风格（primary=主题色, danger=红色）
+ */
 const props = defineProps({
   show: { type: Boolean, default: false },
   title: { type: String, default: '' },
@@ -13,16 +21,23 @@ const props = defineProps({
   },
 })
 
+/** 事件：close - 关闭弹窗, confirm - 确认操作 */
 const emit = defineEmits(['close', 'confirm'])
 
+/** 触发关闭弹窗事件 */
 function handleClose() {
   emit('close')
 }
 
+/** 触发确认操作事件 */
 function handleConfirm() {
   emit('confirm')
 }
 
+/**
+ * 点击遮罩层关闭弹窗
+ * 通过比较 e.target 和 e.currentTarget 确保只有点击遮罩本身（而非弹窗内容）时才关闭
+ */
 function handleBackdropClick(e) {
   if (e.target === e.currentTarget) handleClose()
 }

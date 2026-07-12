@@ -17,11 +17,15 @@ import { exportRecords } from '@/utils/interviewExport'
 
 Chart.register(...registerables)
 
+/** 面试状态（历史记录、统计数据等） */
 const interviewStore = useInterviewStore()
 
+/** 导出菜单是否可见 */
 const showExportMenu = ref(false)
+/** 当前选择的导出格式 */
 const exportFormat = ref('md')
 
+/** 执行导出：调用 exportRecords 工具函数触发浏览器下载 */
 function handleExport(format) {
   exportFormat.value = format
   const records = interviewStore.history
@@ -30,27 +34,42 @@ function handleExport(format) {
   showExportMenu.value = false
 }
 
+/** 雷达图 canvas DOM 引用 */
 const radarCanvas = ref(null)
+/** 柱状图 canvas DOM 引用 */
 const barCanvas = ref(null)
+/** Chart.js 雷达图实例 */
 let radarChart = null
+/** Chart.js 柱状图实例 */
 let barChart = null
 
 // 详情弹窗
+/** 当前查看详情的面试记录 */
 const detailRecord = ref(null)
 
 // 删除模式
+/** 是否处于批量删除模式 */
 const isDeleteMode = ref(false)
+/** 批量删除模式中已勾选的记录 ID 集合 */
 const checkedIds = ref(new Set())
+/** 删除确认弹窗是否可见 */
 const showDeleteConfirm = ref(false)
 
+/** 是否有面试数据 */
 const hasData = computed(() => interviewStore.history.length > 0)
+/** 全局统计数据（来自 store） */
 const stats = computed(() => interviewStore.overallStats)
 
+/** 历史最高分 */
 const bestScore = computed(() => {
   if (interviewStore.history.length === 0) return 0
   return Math.max(...interviewStore.history.map((h) => h.totalScore))
 })
 
+/**
+ * 全历史分类得分汇总
+ * 遍历所有面试记录中所有的题目，按分类（HTML/CSS/JS 等）聚合求平均分
+ */
 const overallCategoryStats = computed(() => {
   const map = {}
   for (const record of interviewStore.history) {
@@ -69,6 +88,7 @@ const overallCategoryStats = computed(() => {
   return result
 })
 
+/** 知识点维度得分数据（用于雷达图），来自 store 的 knowledgePointStats */
 const latestRadarData = computed(() => {
   const kpStats = interviewStore.knowledgePointStats
   return {
@@ -77,10 +97,12 @@ const latestRadarData = computed(() => {
   }
 })
 
+/** 面试记录按完成时间降序排列（最新的在前） */
 const sortedHistory = computed(() =>
   [...interviewStore.history].sort((a, b) => new Date(b.finishedAt) - new Date(a.finishedAt)),
 )
 
+/** 是否全选：所有记录都被勾选 */
 const allChecked = computed(
   () =>
     sortedHistory.value.length > 0 && sortedHistory.value.every((r) => checkedIds.value.has(r.id)),
@@ -89,6 +111,7 @@ const allChecked = computed(
 const checkedCount = computed(() => checkedIds.value.size)
 const isAnyChecked = computed(() => checkedCount.value > 0)
 
+/** 全选/取消全选 */
 function toggleCheckAll() {
   if (allChecked.value) {
     checkedIds.value = new Set()
@@ -97,6 +120,7 @@ function toggleCheckAll() {
   }
 }
 
+/** 切换单条记录的选中状态 */
 function toggleCheck(id) {
   const s = new Set(checkedIds.value)
   if (s.has(id)) s.delete(id)
@@ -104,38 +128,51 @@ function toggleCheck(id) {
   checkedIds.value = s
 }
 
+/** 进入批量删除模式 */
 function enterDeleteMode() {
   isDeleteMode.value = true
   checkedIds.value = new Set()
 }
 
+/** 退出批量删除模式 */
 function exitDeleteMode() {
   isDeleteMode.value = false
   checkedIds.value = new Set()
 }
 
+/** 点击"删除"按钮 → 打开确认弹窗 */
 function confirmDelete() {
   if (!isAnyChecked.value) return
   showDeleteConfirm.value = true
 }
 
+/** 执行批量删除 */
 function executeDelete() {
   interviewStore.deleteHistoryRecords([...checkedIds.value])
   showDeleteConfirm.value = false
   exitDeleteMode()
 }
 
+/** 打开面试记录详情弹窗 */
 function openDetail(record) {
   detailRecord.value = record
 }
 
+/** 关闭详情弹窗 */
 function closeDetail() {
   detailRecord.value = null
 }
 
+/** 图表主题色前缀（indigo-500），后接透明度值拼接成完整 rgba */
 const chartAccent = 'rgba(99, 102, 241,'
+/** 图表网格线颜色 */
 const chartGridColor = 'rgba(148, 163, 184, 0.12)'
 
+/**
+ * 渲染知识点雷达图
+ * 使用 Chart.js radar 类型，展示各知识点的掌握程度（0-10 分）
+ * 先销毁旧图表实例再创建新的，避免 canvas 冲突
+ */
 function renderRadarChart() {
   if (!radarCanvas.value) return
   if (radarChart) radarChart.destroy()
@@ -180,6 +217,10 @@ function renderRadarChart() {
   })
 }
 
+/**
+ * 渲染得分趋势柱状图
+ * 每根柱子按分数着色：>=8 绿色，>=5 橙色，<5 红色
+ */
 function renderBarChart() {
   if (!barCanvas.value) return
   if (barChart) barChart.destroy()
@@ -193,6 +234,7 @@ function renderBarChart() {
         {
           label: '总分',
           data: trend.map((t) => t.score),
+          // 根据分数段动态着色：>=8 绿色，5-7 橙色，<5 红色
           backgroundColor: trend.map((t) =>
             t.score >= 8
               ? `${chartAccent} 0.55)`
@@ -235,6 +277,7 @@ function renderBarChart() {
   })
 }
 
+// 雷达图数据变化时重新渲染（使用 RAF 确保 canvas 挂载后执行）
 watch(latestRadarData, () => requestAnimationFrame(renderRadarChart), { deep: true })
 watch(
   () => stats.value,
@@ -247,12 +290,17 @@ onMounted(() => {
     renderBarChart()
   })
 })
+// 组件卸载时销毁 Chart.js 实例，释放 canvas 资源
 onUnmounted(() => {
   if (radarChart) radarChart.destroy()
   if (barChart) barChart.destroy()
 })
 
 // 详情弹窗
+/**
+ * 计算某条面试记录的分类得分
+ * 与全局 overallCategoryStats 逻辑相同，但仅针对单条记录
+ */
 function detailCategoryStats(record) {
   const map = {}
   for (const q of record.questions || []) {
@@ -269,6 +317,10 @@ function detailCategoryStats(record) {
   return result
 }
 
+/**
+ * 获取单条记录的薄弱知识点列表
+ * 筛选平均分 < 5 的分类，按分数升序排列（最薄弱排前面）
+ */
 function detailWeakPoints(record) {
   const catStats = detailCategoryStats(record)
   return Object.entries(catStats)
@@ -277,10 +329,12 @@ function detailWeakPoints(record) {
     .sort((a, b) => a.score - b.score)
 }
 
+/** 点击详情弹窗遮罩层关闭 */
 function handleDetailBackdropClick(e) {
   if (e.target === e.currentTarget) closeDetail()
 }
 
+/** 点击导出菜单遮罩层关闭 */
 function handleExportBackdropClick(e) {
   if (e.target === e.currentTarget) showExportMenu.value = false
 }

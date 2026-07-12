@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server": "cd server && npm run dev",
+    "all": "concurrently \"npm run dev\" \"npm run server\"",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint src --fix",
@@ -29,6 +31,7 @@
     "@vitejs/plugin-vue": "^5.0.0",
     "@vue/eslint-config-prettier": "^10.2.0",
     "autoprefixer": "^10.4.16",
+    "concurrently": "^10.0.3",
     "eslint": "^10.5.0",
     "eslint-plugin-vue": "^10.9.2",
     "postcss": "^8.4.32",

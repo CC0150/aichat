@@ -17,21 +17,33 @@ const emit = defineEmits(['closeRenameModal', 'sendMessage', 'continueGenerate']
 const chatStore = useChatStore()
 const appStore = useAppStore()
 
+/** 虚拟滚动组件 DynamicScroller 的引用 */
 const scrollerRef = ref(null)
+/** 是否应自动滚动到底部（用户在底部附近时自动跟随，手动上滑后暂停） */
 const shouldAutoScroll = ref(true)
+/** 判定"在底部附近"的阈值（px），在此范围内视为底部，继续自动滚动 */
 const AUTO_SCROLL_THRESHOLD_PX = 120
 
+/** 编辑消息弹窗是否可见 */
 const isEditModalOpen = ref(false)
+/** 正在编辑的消息在消息列表中的索引 */
 const editingMessageIndex = ref(null)
+/** 编辑弹窗中的消息内容 */
 const editingContent = ref('')
 
+/** 重命名弹窗是否可见 */
 const isRenameModalOpen = ref(false)
+/** 重命名弹窗中的新标题 */
 const newChatTitle = ref('')
 
+/** 是否正在进行重新生成（本地状态） */
 const isGenerating = ref(false)
 
+/** 删除本轮对话确认弹窗是否可见 */
 const isDeleteModalOpen = ref(false)
+/** 待删除的消息索引 */
 const deletingTurnIndex = ref(null)
+/** 待删除的消息类型：'user' 或 'assistant' */
 const deletingTurnType = ref(null)
 
 watch(
@@ -47,6 +59,7 @@ const isEmpty = computed(() => chatStore.currentMessages.length === 0)
 // 流式输出时内容变化通过 Pinia reactive 对象驱动模板局部重渲染，避免全量 spread
 const virtualMessages = shallowRef([])
 
+/** 确保消息有唯一 id（虚拟滚动需要 key-field），无 id 时用 chatId + index 生成 */
 function ensureMessageId(msg, index) {
   if (!msg.id) {
     msg.id = `${chatStore.currentChatId || 'chat'}-${index}`
@@ -54,23 +67,25 @@ function ensureMessageId(msg, index) {
   return msg
 }
 
+/** 将 chatStore.currentMessages 同步到 virtualMessages（触发 shallowRef 更新） */
 function syncVirtualMessages() {
   virtualMessages.value = chatStore.currentMessages.map((m, i) => ensureMessageId(m, i))
 }
 
 syncVirtualMessages()
 
-// 消息增删时重建数组
+// 消息数量变化时重建虚拟列表数组（新增/删除消息）
 watch(
   () => chatStore.currentMessages.length,
   () => syncVirtualMessages(),
 )
-// 切会话时重建数组（消息内容完全不同）
+// 切换到不同对话时重建虚拟列表数组（消息内容完全不同）
 watch(
   () => chatStore.currentChatId,
   () => syncVirtualMessages(),
 )
 
+/** 建议问题列表（空状态时显示的快捷入口） */
 const suggestions = [
   { label: 'Java 后端开发面试常见考点', icon: 'lucide:coffee' },
   { label: '产品经理面试中如何回答问题', icon: 'lucide:lightbulb' },
@@ -78,12 +93,18 @@ const suggestions = [
   { label: '数据分析岗位需要掌握哪些技能', icon: 'lucide:bar-chart-3' },
 ]
 
+/** 点击建议卡片 → 以该建议文本作为消息发送 */
 function onSuggest(s) {
   emit('sendMessage', s.label)
 }
 
+/** 上次滚动 RAF 的 ID，用于取消重复排队 */
 let scrollRafId = null
 
+/**
+ * 强制滚动到底部（使用 RAF 确保 DOM 更新后执行）
+ * 取消之前的滚动 RAF 避免重复排队
+ */
 function scrollToBottomForce() {
   if (scrollRafId) cancelAnimationFrame(scrollRafId)
   scrollRafId = requestAnimationFrame(() => {
@@ -95,6 +116,7 @@ function scrollToBottomForce() {
   })
 }
 
+/** 自动滚动：仅在 shouldAutoScroll 为 true 时执行（用户手动上滑后暂停） */
 function scrollToBottom() {
   nextTick(() => {
     if (!shouldAutoScroll.value) return
@@ -102,6 +124,10 @@ function scrollToBottom() {
   })
 }
 
+/**
+ * 进入对话时强制滚到底部
+ * 连续两次 RAF 确保虚拟滚动组件完成渲染后再滚动
+ */
 function scrollToBottomOnEnter() {
   shouldAutoScroll.value = true
   nextTick(() => {
@@ -110,14 +136,20 @@ function scrollToBottomOnEnter() {
   })
 }
 
+/** 判断滚动容器是否在底部附近（阈值内视为"在底部"） */
 function isNearBottom(el, thresholdPx = AUTO_SCROLL_THRESHOLD_PX) {
   if (!el) return true
   const distance = el.scrollHeight - el.scrollTop - el.clientHeight
   return distance <= thresholdPx
 }
 
+/** 滚动节流标志：防止同一个 RAF 周期内重复执行滚动逻辑 */
 let scrollTicking = false
 
+/**
+ * 滚动事件处理（RAF 节流）
+ * 根据当前滚动位置判断是否应继续自动跟随
+ */
 function onScrollerScroll(e) {
   if (scrollTicking) return
   scrollTicking = true
@@ -128,10 +160,13 @@ function onScrollerScroll(e) {
   })
 }
 
+/** 已绑定滚动事件监听的 DOM 元素引用（用于切换对话时重新绑定） */
 let boundScrollEl = null
+/** 绑定虚拟滚动容器的滚动事件监听，处理动态 DOM 替换（RecycleScroller 可能重建 $el） */
 function bindScrollerDomScroll() {
   const el = scrollerRef.value?.$el
   if (!el) return
+  // 如果 scroller 的 DOM 元素已更换，先解绑旧的再绑定新的
   if (boundScrollEl && boundScrollEl !== el) {
     boundScrollEl.removeEventListener('scroll', onScrollerScroll)
     boundScrollEl = null
@@ -142,12 +177,17 @@ function bindScrollerDomScroll() {
   }
 }
 
+/** 复制文本到剪贴板（静默失败） */
 async function copyToClipboard(text) {
   try {
     await navigator.clipboard.writeText(text)
   } catch (_) {}
 }
 
+/**
+ * 从消息对象中提取纯文本内容
+ * 支持 string 格式和 { text, attachments, images } 对象格式
+ */
 function getUserText(message) {
   const c = message?.content
   if (typeof c === 'string') return c
@@ -157,25 +197,31 @@ function getUserText(message) {
   return ''
 }
 
+/** 从消息对象中提取图片数组 */
 function getUserImages(message) {
   const c = message?.content
   if (c && Array.isArray(c.images)) return c.images
   return []
 }
 
+/** 图片全屏预览是否可见 */
 const isImagePreviewOpen = ref(false)
+/** 当前预览的图片对象 { url, name } */
 const previewImage = ref(null)
 
+/** 打开图片全屏预览 */
 function openImagePreview(img) {
   previewImage.value = img
   isImagePreviewOpen.value = true
 }
 
+/** 关闭图片全屏预览 */
 function closeImagePreview() {
   isImagePreviewOpen.value = false
   previewImage.value = null
 }
 
+/** 删除从 user 消息开始的一整轮对话 */
 function deleteTurnFromUser(index) {
   if (!chatStore.currentChatId) return
   deletingTurnIndex.value = index
@@ -183,6 +229,7 @@ function deleteTurnFromUser(index) {
   isDeleteModalOpen.value = true
 }
 
+/** 删除从 assistant 消息开始的一整轮对话 */
 function deleteTurnFromAssistant(index) {
   if (!chatStore.currentChatId) return
   deletingTurnIndex.value = index
@@ -190,6 +237,7 @@ function deleteTurnFromAssistant(index) {
   isDeleteModalOpen.value = true
 }
 
+/** 确认删除本轮对话，根据类型调用对应的 store 方法 */
 function confirmDelete() {
   if (!chatStore.currentChatId || deletingTurnIndex.value === null) {
     closeDeleteModal()
@@ -203,12 +251,18 @@ function confirmDelete() {
   closeDeleteModal()
 }
 
+/** 关闭删除确认弹窗并重置状态 */
 function closeDeleteModal() {
   isDeleteModalOpen.value = false
   deletingTurnIndex.value = null
   deletingTurnType.value = null
 }
 
+/**
+ * 重新生成 AI 回复
+ * @param {number} index - 当前 assistant 消息在消息列表中的索引
+ * assistant 消息的前一条（index - 1）必须是 user 消息，用它重新请求
+ */
 async function regenerate(index) {
   if (!chatStore.currentChatId || isGenerating.value) return
   const userMessageIndex = index - 1
@@ -217,11 +271,13 @@ async function regenerate(index) {
   if (!userMessage || userMessage.role !== 'user') return
 
   const controller = new AbortController()
+  // 注册到 store 以便 ChatInput 的停止按钮也能中止重新生成
   chatStore.setRegenerateAbort(controller)
   chatStore.isRegenerating = true
   try {
     isGenerating.value = true
     const modelConfig = appStore.currentModel
+    // 清空当前 assistant 消息，准备接收新内容
     chatStore.setLastAssistantMessage('')
 
     await requestChatStream({
@@ -240,6 +296,7 @@ async function regenerate(index) {
       signal: controller.signal,
     })
   } catch (error) {
+    // 用户主动中止时不报错
     if (controller.signal.aborted || isAbortError(error)) return
     console.error('API error:', error)
     chatStore.setLastAssistantMessage(`Error: ${error.message}`)
@@ -250,18 +307,21 @@ async function regenerate(index) {
   }
 }
 
+/** 打开编辑用户消息的弹窗 */
 function openEditModal(index, content) {
   editingMessageIndex.value = index
   editingContent.value = content
   isEditModalOpen.value = true
 }
 
+/** 关闭编辑弹窗并重置状态 */
 function closeEditModal() {
   isEditModalOpen.value = false
   editingMessageIndex.value = null
   editingContent.value = ''
 }
 
+/** 保存编辑后的消息内容，空内容不保存 */
 function saveEditedMessage() {
   if (editingMessageIndex.value === null || !chatStore.currentChatId) {
     closeEditModal()
@@ -276,6 +336,7 @@ function saveEditedMessage() {
   closeEditModal()
 }
 
+/** 打开重命名弹窗，预填当前对话标题 */
 function openRenameModal() {
   if (chatStore.currentChat) {
     newChatTitle.value = chatStore.currentChat.title
@@ -283,12 +344,14 @@ function openRenameModal() {
   }
 }
 
+/** 关闭重命名弹窗并通知父组件 */
 function closeRenameModal() {
   isRenameModalOpen.value = false
   newChatTitle.value = ''
   emit('closeRenameModal')
 }
 
+/** 保存对话标题（去首尾空格，空标题不保存） */
 function saveChatTitle() {
   if (!chatStore.currentChatId) {
     closeRenameModal()
@@ -303,7 +366,8 @@ function saveChatTitle() {
   closeRenameModal()
 }
 
-// 消息数变化或最后一条消息内容更新时（含流式输出）自动滚动到底部
+// 消息数变化或最后一条消息内容更新时（含流式输出 chunk）自动滚动到底部
+// flush: 'post' 确保在 DOM 更新后再执行滚动
 watch(
   () => {
     const msgs = virtualMessages.value
@@ -321,6 +385,7 @@ onMounted(() => {
   }
   nextTick(() => bindScrollerDomScroll())
 })
+// 切换对话时重新绑定滚动监听并滚到底部
 watch(
   () => chatStore.currentChatId,
   () => {
@@ -331,6 +396,7 @@ watch(
   },
 )
 
+// 组件卸载时解绑滚动事件监听，防止内存泄漏
 onUnmounted(() => {
   if (boundScrollEl) {
     boundScrollEl.removeEventListener('scroll', onScrollerScroll)
@@ -762,5 +828,4 @@ onUnmounted(() => {
 .suggestion-card:hover::before {
   opacity: 1;
 }
-
 </style>

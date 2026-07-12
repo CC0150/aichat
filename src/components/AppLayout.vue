@@ -4,13 +4,19 @@ import { Icon } from '@iconify/vue'
 import { useAppStore } from '@/stores/app'
 import AppSidebar from './AppSidebar.vue'
 
+/** 全局应用状态（主题、侧边栏、当前模型等） */
 const appStore = useAppStore()
 
+/**
+ * 根据侧边栏折叠状态动态计算侧边栏宽度 CSS class
+ * 展开时使用 w-sidebar，折叠时使用 w-sidebar-collapsed
+ */
 const sidebarWidthClass = computed(() => ({
   'w-sidebar': !appStore.sidebarCollapsed,
   'w-sidebar-collapsed': appStore.sidebarCollapsed,
 }))
 
+/** 移动端遮罩层是否可见（仅在侧边栏滑出时显示） */
 const showOverlay = computed(() => appStore.sidebarOpen)
 </script>
 

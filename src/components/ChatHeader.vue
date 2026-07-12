@@ -3,8 +3,15 @@ import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
 
+/** 聊天状态（当前对话、历史记录等） */
 const chatStore = useChatStore()
 
+/**
+ * 当前对话标题
+ * 优先使用 chatStore 中当前对话对象的 title，
+ * 其次从历史记录中查找匹配 ID 的标题，
+ * 都没有则显示默认标题 "New Chat"
+ */
 const currentTitle = computed(() => {
   if (chatStore.currentChat?.title) return chatStore.currentChat.title
   if (chatStore.currentChatId)
@@ -12,8 +19,10 @@ const currentTitle = computed(() => {
   return 'New Chat'
 })
 
+/** 向父组件发送打开重命名弹窗事件 */
 const emit = defineEmits(['openRenameModal'])
 
+/** 触发重命名弹窗（仅当存在当前对话时） */
 function handleRenameClick() {
   if (chatStore.currentChatId) {
     emit('openRenameModal')

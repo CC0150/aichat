@@ -12,39 +12,66 @@ import { parseFile } from '@/utils/docParser'
 import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
 import { watch } from 'vue'
 
+/** 输入框文本 */
 const input = ref('')
 const router = useRouter()
+/** 聊天状态（历史、消息、当前对话等） */
 const chatStore = useChatStore()
+/** 全局应用状态（主题、侧边栏、当前模型等） */
 const appStore = useAppStore()
+/** 面试状态（历史记录列表等） */
 const interviewStore = useInterviewStore()
+/** 是否正在发送消息（本地状态） */
 const isSending = ref(false)
+/** 是否处于忙碌状态（发送中 或 重新生成中），用于控制发送/停止按钮 */
 const isBusy = computed(() => isSending.value || chatStore.isRegenerating)
+/** 当前活跃的 AbortController，用于中止 SSE 请求 */
 let activeController = null
+/** textarea DOM 引用 */
 const textareaRef = ref(null)
+/** 模型选择下拉菜单是否打开 */
 const isModelMenuOpen = ref(false)
 
 // 面试记录引用
+/** 当前选中的面试记录 */
 const selectedInterview = ref(null)
+/** 面试记录选择下拉菜单是否打开 */
 const isInterviewMenuOpen = ref(false)
 
+/** 是否可以发送（输入框非空） */
 const canSend = computed(() => !!input.value?.trim())
+/** 是否已附加面试记录 */
 const hasInterviewAttachment = computed(() => attachments.value.some((a) => a.type === 'interview'))
 
+/** 文件选择 input DOM 引用 */
 const fileInputRef = ref(null)
+/** 附件列表：{ id, name, text, type }[] */
 const attachments = ref([])
+/** 是否正在解析附件内容 */
 const isParsingAttachment = ref(false)
 
+/** 附件文本上下文最大字符数（超出部分裁剪） */
 const MAX_CONTEXT_CHARS = 8000
+/** 最多可添加的附件数 */
 const MAX_ATTACHMENTS = 5
 
+/** 图片选择 input DOM 引用 */
 const imageInputRef = ref(null)
+/** 图片列表：{ id, name, url, file }[] */
 const images = ref([])
+/** 最多可上传的图片数 */
 const MAX_IMAGES = 5
 
 function triggerFileSelect() {
   if (fileInputRef.value) fileInputRef.value.click()
 }
 
+/**
+ * 处理用户选择的文件附件
+ * - 限制最多 MAX_ATTACHMENTS 个附件
+ * - 调用 parseFile 解析文件内容（PDF/Word/TXT 等）
+ * - 解析成功后以 { id, name, text, type } 格式存入 attachments
+ */
 async function handleFileChange(event) {
   const files = Array.from(event.target.files || [])
   if (!files.length) return
@@ -64,6 +91,7 @@ async function handleFileChange(event) {
       const parsed = await parseFile(file)
       if (parsed.text) {
         attachments.value.push({
+          // 用时间戳+文件名+随机串保证唯一 ID，防止同名文件冲突
           id: `${Date.now()}-${file.name}-${Math.random().toString(36).slice(2, 8)}`,
           name: parsed.name,
           text: parsed.text,
@@ -80,11 +108,13 @@ async function handleFileChange(event) {
   isParsingAttachment.value = false
 }
 
+/** 清空所有附件 */
 function clearAttachment() {
   attachments.value = []
   if (fileInputRef.value) fileInputRef.value.value = ''
 }
 
+/** 根据附件类型/扩展名返回对应的图标和颜色 class */
 function getAttachmentIcon(att) {
   if (att?.type === 'interview') return { icon: 'lucide:clipboard-list', class: 'text-primary' }
   const name = (att?.name || '').toLowerCase()
@@ -94,6 +124,7 @@ function getAttachmentIcon(att) {
   return { icon: 'lucide:file', class: 'text-text-muted' }
 }
 
+/** 移除指定 ID 的附件，如果是面试记录附件则同步清除选中状态 */
 function removeAttachment(id) {
   const att = attachments.value.find((a) => a.id === id)
   if (att?.type === 'interview') selectedInterview.value = null
@@ -101,6 +132,7 @@ function removeAttachment(id) {
   if (!attachments.value.length && fileInputRef.value) fileInputRef.value.value = ''
 }
 
+/** 移除指定 ID 的图片，同时释放 blob URL 防止内存泄漏 */
 function removeImage(id) {
   const img = images.value.find((i) => i.id === id)
   if (img && img.url) URL.revokeObjectURL(img.url)
@@ -108,16 +140,22 @@ function removeImage(id) {
   if (!images.value.length && imageInputRef.value) imageInputRef.value.value = ''
 }
 
+/** 清空所有图片 */
 function clearImages() {
   images.value = []
   if (imageInputRef.value) imageInputRef.value.value = ''
 }
 
+/** 切换当前使用的 AI 模型 */
 function selectModel(id) {
   appStore.setCurrentModelId(id)
   isModelMenuOpen.value = false
 }
 
+/**
+ * 将面试记录作为附件引用到当前对话
+ * 移除旧面试附件 → 生成虚拟附件（类型为 interview）→ 内容走 system message 通道
+ */
 function selectInterview(record) {
   // 移除旧的面试附件
   clearInterview()
@@ -133,11 +171,16 @@ function selectInterview(record) {
   })
 }
 
+/** 清除面试记录引用 */
 function clearInterview() {
   selectedInterview.value = null
   attachments.value = attachments.value.filter((a) => a.type !== 'interview')
 }
 
+/**
+ * 将面试记录格式化为结构化文本
+ * 包含：概览、逐题详情（题目/回答/得分/点评/参考回答）、薄弱知识点汇总
+ */
 function formatInterviewContent(record) {
   if (!record) return ''
 
@@ -176,7 +219,7 @@ function formatInterviewContent(record) {
     parts.push(``)
   })
 
-  // 薄弱知识点汇总
+  // 薄弱知识点汇总：筛选所有得分 < 5 的题目所关联的知识点
   const weak = []
   for (const q of questions) {
     const s = scores[q.id]
@@ -200,6 +243,7 @@ function autoResize(el) {
   autoResizeTextarea(el, 200)
 }
 
+/** 输入事件：自动调整 textarea 高度 */
 function onInput(e) {
   autoResize(e.target)
 }
@@ -208,6 +252,7 @@ function triggerImageSelect() {
   if (imageInputRef.value) imageInputRef.value.click()
 }
 
+/** 处理图片文件选择：读取 FileList 并转为本地 blob URL 存入 images */
 async function handleImageChange(event) {
   const files = Array.from(event.target.files || [])
   if (!files.length) return
@@ -215,6 +260,10 @@ async function handleImageChange(event) {
   event.target.value = ''
 }
 
+/**
+ * 将图片文件转为 blob URL 并添加到 images 数组
+ * 限制最多 MAX_IMAGES 张，非图片类型会被跳过
+ */
 async function addImagesFromFiles(files) {
   const remaining = MAX_IMAGES - images.value.length
   if (remaining <= 0) {
@@ -224,6 +273,7 @@ async function addImagesFromFiles(files) {
   const filesToUse = files.slice(0, remaining)
   for (const file of filesToUse) {
     if (!file.type.startsWith('image/')) continue
+    // 使用 URL.createObjectURL 创建本地预览 URL（组件卸载或移除时会调用 revokeObjectURL 释放）
     const url = URL.createObjectURL(file)
     images.value.push({
       id: `${Date.now()}-${file.name}-${Math.random().toString(36).slice(2, 8)}`,
@@ -234,6 +284,7 @@ async function addImagesFromFiles(files) {
   }
 }
 
+/** 处理粘贴事件：从中提取图片文件（支持截图粘贴） */
 async function handlePaste(e) {
   const items = e.clipboardData?.items
   if (!items || !items.length) return
@@ -247,6 +298,7 @@ async function handlePaste(e) {
   if (imageFiles.length) await addImagesFromFiles(imageFiles)
 }
 
+/** Enter 发送（Shift+Enter 换行） */
 function onEnterKey(e) {
   if (e.shiftKey) return
   e.preventDefault()
@@ -258,9 +310,15 @@ async function send() {
   const text = input.value?.trim()
   if (!text) return
   await sendMessage(text)
+  // 发送后重置 textarea 高度
   if (textareaRef.value) textareaRef.value.style.height = ''
 }
 
+/**
+ * 中止当前请求
+ * 同时处理 ChatInput 自身的 activeController 和 MessageArea 的 regenerate controller
+ * 如果 AI 已有有效输出内容，则记录为"被中断"状态，允许后续继续生成
+ */
 function abortCurrentRequest() {
   if (activeController) {
     try {
@@ -270,7 +328,7 @@ function abortCurrentRequest() {
   }
   chatStore.abortRegenerate()
   isSending.value = false
-  // 标记中断，允许继续生成
+  // 如果最后一条 assistant 消息有内容 → 标记中断，允许继续生成
   if (chatStore.currentChatId) {
     const msgs = chatStore.currentMessages
     const last = msgs[msgs.length - 1]
@@ -280,6 +338,7 @@ function abortCurrentRequest() {
   }
 }
 
+/** 发送/停止的开关：busy 状态时中止，空闲状态时发送 */
 function onSendOrStop() {
   if (isBusy.value) {
     abortCurrentRequest()
@@ -288,6 +347,10 @@ function onSendOrStop() {
   send()
 }
 
+/**
+ * 为"继续生成"构建消息数组
+ * 过滤空消息、将对象格式 content 转为纯文本，最后按 token 预算裁剪
+ */
 function buildMessagesForContinue() {
   const raw = chatStore.currentMessages
   const messages = raw
@@ -296,12 +359,14 @@ function buildMessagesForContinue() {
       const c = m.content
       if (typeof c === 'string') return !!c.trim()
       if (Array.isArray(c)) return c.length > 0
+      // 对象格式 content（带 attachments/images 的复杂消息结构）
       if (c && typeof c === 'object')
         return !!(c.text != null || c.attachments?.length || c.images?.length)
       return !!c
     })
     .map((m) => {
       let content = m.content
+      // 将对象格式 content 展平为纯文本，因为继续生成不需要附件/图片上下文
       if (content && typeof content === 'object' && !Array.isArray(content)) {
         content = content.text != null ? String(content.text) : ''
       }
@@ -310,6 +375,10 @@ function buildMessagesForContinue() {
   return trimByTokenBudget(messages, appStore.currentModel?.contextWindow ?? 128000)
 }
 
+/**
+ * 继续生成：从被中断的 AI 回复末尾继续追加内容
+ * 使用当前消息列表的完整上下文（已按 token 预算裁剪）
+ */
 async function continueGeneration() {
   if (isBusy.value) return
   const messages = buildMessagesForContinue()
@@ -332,6 +401,7 @@ async function continueGeneration() {
       model: modelConfig.model,
       messages,
       onChunk: (chunk) => {
+        // 确保流式响应仍然对应当前对话（防止用户快速切换对话导致的串数据）
         if (chatStore.currentChatId === streamingChatId) chatStore.appendToLastMessage(chunk)
       },
       onError: (msg) => {
@@ -352,11 +422,20 @@ async function continueGeneration() {
       chatStore.setLastAssistantMessage(`Error: ${error.message}`)
     }
   } finally {
+    // 防止覆盖其他请求的 controller（例如并发发送）
     if (activeController === controller) activeController = null
     isSending.value = false
   }
 }
 
+/**
+ * 核心发送逻辑
+ * 1. 将用户消息添加到 store（如有附件/图片则用对象格式）
+ * 2. 通过 buildMessagesWithContext 构建包含上下文的消息数组
+ * 3. 发起 SSE 流式请求，逐 chunk 追加到当前 assistant 消息
+ * 4. 异常处理：中断/网络错误/API 错误分别处理
+ * 5. 完成后清空附件和图片
+ */
 async function sendMessage(content) {
   if (isBusy.value) return
 
@@ -371,9 +450,11 @@ async function sendMessage(content) {
   const controller = new AbortController()
   activeController = controller
 
+  // 根据是否有附件/图片决定 user 消息的 content 格式
   const hasAttachments = attachments.value.length > 0
   const hasImages = images.value.length > 0
   if (hasAttachments || hasImages) {
+    // 拍快照：防止在异步发送过程中附件/图片被修改
     const attachmentSnapshots = attachments.value.map((a) => ({
       id: a.id,
       name: a.name,
@@ -393,13 +474,16 @@ async function sendMessage(content) {
   // 清除面试记录引用（附件内容已通过 snapshot 发送）
   if (selectedInterview.value) selectedInterview.value = null
 
+  // 如果还没有 chatId（新对话），路由跳转到带 ID 的路径
   if (chatStore.currentChatId) {
     router.replace({ name: 'ChatById', params: { id: chatStore.currentChatId } })
   }
 
+  // 预先创建空的 assistant 消息占位，流式输出时逐 chunk 追加
   chatStore.addMessage('assistant', '')
 
   try {
+    // buildMessagesWithContext 负责：裁剪历史消息、构建 system prompt（含附件内容）
     const { messages } = await buildMessagesWithContext({
       history: chatStore.currentMessages,
       text,
@@ -415,6 +499,7 @@ async function sendMessage(content) {
     if (controller.signal.aborted) return
 
     const streamingChatId = chatStore.currentChatId
+    // SSE 流式请求：每个 data chunk 追加到当前 assistant 消息末尾
     await requestChatStream({
       model: modelConfig.model,
       messages,
@@ -429,6 +514,7 @@ async function sendMessage(content) {
     })
   } catch (error) {
     if (controller.signal.aborted || isAbortError(error)) {
+      // 用户主动中止 / 网络中断：如果 assistant 消息为空则显示 (Stopped)
       const last = chatStore.currentMessages[chatStore.currentMessages.length - 1]
       if (last && last.role === 'assistant' && (!last.content || !String(last.content).trim())) {
         chatStore.setLastAssistantMessage('(Stopped)')
@@ -445,6 +531,7 @@ async function sendMessage(content) {
   }
 }
 
+/** 语音识别：录音状态、初始化、停止、切换 */
 const {
   isRecording,
   init: initSpeechRecognition,
@@ -457,6 +544,7 @@ const {
   },
 })
 
+/** 切换语音输入开关，不支持时弹窗提示 */
 function toggleRecording() {
   if (!toggleSpeechRecognition()) {
     alert('Speech recognition is not supported. Please use Chrome, Edge, or Safari.')
@@ -465,11 +553,13 @@ function toggleRecording() {
 
 onMounted(() => {
   initSpeechRecognition()
+  // 页面关闭前中止进行中的请求，避免连接泄漏
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
 
 onUnmounted(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
+  // 确保清理 AbortController，避免内存泄漏
   if (activeController) {
     try {
       activeController.abort()
@@ -480,6 +570,7 @@ onUnmounted(() => {
   stopSpeechRecognition()
 })
 
+// 切换对话时中止当前请求，防止流式数据串到新对话
 watch(
   () => chatStore.currentChatId,
   (newId, oldId) => {
@@ -489,10 +580,12 @@ watch(
   },
 )
 
+/** 页面关闭/刷新前中止进行中的 SSE 请求 */
 function handleBeforeUnload() {
   if (isSending.value && activeController) activeController.abort()
 }
 
+// 暴露给父组件调用：支持从建议卡片或外部触发发送
 defineExpose({ sendMessage, continueGeneration })
 </script>
 

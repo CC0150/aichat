@@ -1,33 +1,52 @@
 <script setup>
-import { ref, reactive, watch, computed } from 'vue'
+import { ref, reactive, watch, computed, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useInterviewStore } from '@/stores/interview'
 import { useAppStore } from '@/stores/app'
 import { requestScore, requestEvaluate } from '@/utils/interviewApi'
+import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
 
 const emit = defineEmits(['quit'])
+/** 面试状态（题目、答案、分数、阶段等） */
 const interviewStore = useInterviewStore()
+/** 全局应用状态（当前模型等） */
 const appStore = useAppStore()
 
+/** 普通题的回答文本 / 代码题的文字说明 */
 const userAnswer = ref('')
+/** 代码题的代码内容 */
 const codeAnswer = ref('')
+/** 是否正在等待 AI 评分响应 */
 const isScoring = ref(false)
+/** 评分过程中的错误信息 */
 const scoreError = ref('')
+/** 普通题 textarea DOM 引用 */
 const textareaRef = ref(null)
+/** 代码编辑器 textarea DOM 引用 */
 const codeAreaRef = ref(null)
+/** 当前题目是否为代码题（coding 类型显示代码编辑器+文字说明区） */
 const isCodingQuestion = ref(false)
+/** 本地草稿缓存：键为题 ID，值为答案内容，用于题目切换时保留未提交的答案 */
 const draftAnswers = reactive({})
+/** 当前 AI 追问的文本 */
 const followUpQuestion = ref('')
+/** 当前追问轮次（从 0 开始，最多 MAX_FOLLOW_UP_ROUNDS 轮） */
 const currentRound = ref(0)
-const useDeepMode = ref(true) // 默认启用深度追问模式
+/** 是否启用深度追问模式（默认开启） */
+const useDeepMode = ref(true)
 
+/** 最多追问轮数 */
 const MAX_FOLLOW_UP_ROUNDS = 3
 
-/** 当前题目的对话轮次（追问次数） */
+/**
+ * 当前题目的对话轮次（追问次数）
+ * conversations 存储 user 和 assistant 交替的消息数组，/2 得到轮数
+ */
 const conversationRounds = computed(() =>
   Math.floor((interviewStore.conversations[interviewStore.currentQuestion?.id]?.length || 0) / 2),
 )
 
+/** 退出答题：重置所有本地状态并通知父组件 */
 function handleQuit() {
   userAnswer.value = ''
   codeAnswer.value = ''
@@ -37,7 +56,11 @@ function handleQuit() {
   emit('quit')
 }
 
-/** 将组合格式的答案拆分为代码和文字 */
+/**
+ * 将组合格式的答案拆分为代码和文字
+ * 代码题的答案格式：[代码]\n...\n\n[文字说明]\n...
+ * 解析失败时将全部内容放入代码区
+ */
 function parseStoredAnswer(raw) {
   if (!raw) return { code: '', text: '' }
   const codeMatch = raw.match(/^\[代码\]\n([\s\S]*?)\n\n\[文字说明\]\n([\s\S]*)$/)
@@ -48,7 +71,10 @@ function parseStoredAnswer(raw) {
   return { code: raw, text: '' }
 }
 
-/** 保存当前题目的草稿 */
+/**
+ * 保存当前题目的草稿到本地缓存
+ * 代码题用 { c, t } 对象存储（代码+文字），普通题直接存字符串
+ */
 function saveDraft(qId) {
   if (!qId) return
   const hasDraft = (isCodingQuestion.value && codeAnswer.value.trim()) || userAnswer.value.trim()
@@ -60,7 +86,11 @@ function saveDraft(qId) {
   }
 }
 
-/** 恢复题目答案 */
+/**
+ * 恢复题目答案
+ * 优先级：本地草稿 > 已提交到 store 的答案
+ * 代码题需解析多种存储格式：{ c, t } 对象、组合格式字符串、纯文本
+ */
 function restoreDraft(qId) {
   const draft = draftAnswers[qId]
   const stored = interviewStore.answers[qId]
@@ -83,7 +113,13 @@ function restoreDraft(qId) {
   }
 }
 
-// 题目切换时恢复答案和追问状态
+/**
+ * 题目切换时的完整恢复流程：
+ * 1. 保存旧题目的草稿
+ * 2. 根据新题目类型设置代码/普通模式
+ * 3. 恢复该题目的答案（本地草稿或已提交答案）
+ * 4. 恢复追问状态（对话轮次、追问文本）
+ */
 watch(
   () => interviewStore.currentQuestion,
   (q, oldQ) => {
@@ -95,7 +131,7 @@ watch(
       // 恢复追问状态
       const conv = interviewStore.conversations[q.id] || []
       if (conv.length > 0 && !interviewStore.scores[q.id]) {
-        // 有对话记录且未完成 → 从最后一条 assistant 消息获取追问
+        // 有对话记录且未完成 → 从最后一条 assistant 消息获取追问文本
         const lastAssistant = [...conv].reverse().find((m) => m.role === 'assistant')
         followUpQuestion.value = lastAssistant?.content || ''
         currentRound.value = Math.floor(conv.length / 2)
@@ -113,24 +149,37 @@ watch(
   { immediate: true },
 )
 
-// 跳转到指定题目
+/** 跳转到指定索引的题目（评分中禁止跳转） */
 function handleGoToQuestion(index) {
   if (isScoring.value) return
   saveDraft(interviewStore.currentQuestion?.id)
   interviewStore.goToQuestion(index)
 }
 
-// 题目状态
+/**
+ * 获取题目在导航条中的状态
+ * @returns {'current' | 'scored' | 'draft' | 'unanswered'}
+ */
 function getQuestionStatus(index) {
   const q = interviewStore.questions[index]
   if (!q) return 'unanswered'
   if (index === interviewStore.currentIndex) return 'current'
   if (interviewStore.scores[q.id]) return 'scored'
+  // 有对话记录或草稿/答案 → 已填写但未评分
   if (interviewStore.conversations[q.id]?.length) return 'draft'
   if (draftAnswers[q.id] || interviewStore.answers[q.id]) return 'draft'
   return 'unanswered'
 }
 
+/**
+ * 提交答案的核心逻辑
+ * 支持两种模式：
+ * - 深度追问模式（useDeepMode）：发送给 /api/interview/evaluate，AI 可能返回 follow_up（继续追问）或 complete（完成评分）
+ * - 普通评分模式：发送给 /api/interview/score，直接返回评分结果
+ *
+ * 代码题会自动组装为 [代码]...[文字说明]... 的组合格式
+ * 异常时降级为默认评分（5分），避免阻塞流程
+ */
 async function handleSubmit() {
   const q = interviewStore.currentQuestion
   if (!q || isScoring.value) return
@@ -140,6 +189,7 @@ async function handleSubmit() {
     const code = codeAnswer.value.trim()
     const text = userAnswer.value.trim()
     if (!code && !text) return
+    // 将代码和文字说明组装为固定格式，方便后续解析
     answer = [`[代码]\n${code || '(未编写代码)'}`, `[文字说明]\n${text || '(未填写说明)'}`].join(
       '\n\n',
     )
@@ -149,7 +199,7 @@ async function handleSubmit() {
   }
 
   if (useDeepMode.value) {
-    // 深度追问模式
+    // 深度追问模式：多轮对话式评估
     interviewStore.submitAnswer(q.id, answer, true)
     isScoring.value = true
     scoreError.value = ''
@@ -166,19 +216,20 @@ async function handleSubmit() {
       const action = interviewStore.handleEvaluateResult(q.id, result)
 
       if (action === 'follow_up') {
+        // AI 决定继续追问 → 显示追问问题，保留当前答案输入区
         followUpQuestion.value = result.followUpQuestion
         currentRound.value++
         userAnswer.value = ''
         codeAnswer.value = ''
       } else {
-        // complete
+        // AI 判定完成 → 清除追问状态
         followUpQuestion.value = ''
         currentRound.value = 0
       }
       delete draftAnswers[q.id]
     } catch (err) {
       scoreError.value = err.message || '评估失败'
-      // 降级为直接完成
+      // 降级为默认评分，确保面试流程不被中断
       interviewStore.saveScore(q.id, {
         score: 5,
         correctness: 5,
@@ -222,6 +273,7 @@ async function handleSubmit() {
   }
 }
 
+/** 进入下一题：重置输入状态并推进到下一题 */
 function handleNext() {
   userAnswer.value = ''
   codeAnswer.value = ''
@@ -231,6 +283,11 @@ function handleNext() {
   interviewStore.nextQuestion()
 }
 
+/**
+ * 键盘快捷键处理
+ * - Tab（代码题中）：插入 2 空格缩进
+ * - Ctrl+Enter / Cmd+Enter：提交答案或进入下一题
+ */
 function handleKeydown(e) {
   if (isCodingQuestion.value && e.key === 'Tab') {
     e.preventDefault()
@@ -238,7 +295,9 @@ function handleKeydown(e) {
     if (!ta) return
     const start = ta.selectionStart
     const end = ta.selectionEnd
+    // 在光标位置插入 2 空格缩进
     codeAnswer.value = codeAnswer.value.slice(0, start) + '  ' + codeAnswer.value.slice(end)
+    // RAF 确保 DOM 更新后再设置光标位置
     requestAnimationFrame(() => {
       ta.selectionStart = ta.selectionEnd = start + 2
     })
@@ -253,6 +312,41 @@ function handleKeydown(e) {
     }
   }
 }
+
+// ===== 语音输入 =====
+/** 语音识别：录音状态、初始化、停止、切换 */
+const {
+  isRecording,
+  init: initSpeechRecognition,
+  stop: stopSpeechRecognition,
+  toggle: toggleSpeechRecognition,
+} = useSpeechRecognition({
+  onResult(text) {
+    // 识别结果追加到文字说明区（概念题的主回答区 或 代码题的文字说明区）
+    userAnswer.value = userAnswer.value + text
+    // 自动调整概念题 textarea 高度（非代码题）
+    if (!isCodingQuestion.value && textareaRef.value) {
+      textareaRef.value.style.height = 'auto'
+      textareaRef.value.style.height = textareaRef.value.scrollHeight + 'px'
+    }
+  },
+})
+
+/** 切换语音输入开关，不支持时弹窗提示 */
+function toggleRecording() {
+  if (!toggleSpeechRecognition()) {
+    alert('您的浏览器不支持语音识别，请使用 Chrome、Edge 或 Safari 浏览器。')
+  }
+}
+
+onMounted(() => {
+  initSpeechRecognition()
+})
+
+// 组件卸载时停止语音识别，释放资源
+onUnmounted(() => {
+  stopSpeechRecognition()
+})
 </script>
 
 <template>
@@ -462,9 +556,35 @@ function handleKeydown(e) {
           </template>
 
           <div class="mt-3 flex items-center justify-between gap-2">
-            <span class="hidden text-xs text-text-muted sm:inline"
-              >{{ codeAnswer.length + userAnswer.length }} 字符</span
-            >
+            <div class="flex items-center gap-2">
+              <button
+                v-tooltip="isRecording ? '停止录音' : '语音输入'"
+                type="button"
+                class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-all duration-200"
+                :class="
+                  isRecording
+                    ? 'bg-red-500/10 text-red-500 hover:bg-red-500/15'
+                    : 'text-text-muted hover:bg-surface-input hover:text-text-primary'
+                "
+                :aria-label="isRecording ? '停止录音' : '语音输入'"
+                @click="toggleRecording"
+              >
+                <Icon
+                  :icon="isRecording ? 'lucide:mic-off' : 'lucide:mic'"
+                  class="h-[17px] w-[17px]"
+                />
+                <span class="hidden sm:inline">{{ isRecording ? '录音中...' : '语音' }}</span>
+                <span v-if="isRecording" class="relative flex h-2 w-2 ml-0.5">
+                  <span
+                    class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"
+                  />
+                  <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                </span>
+              </button>
+              <span class="hidden text-xs text-text-muted sm:inline"
+                >{{ codeAnswer.length + userAnswer.length }} 字符</span
+              >
+            </div>
             <button
               type="button"
               class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white transition-all duration-200 hover:bg-primary/90 disabled:opacity-50 sm:w-auto"

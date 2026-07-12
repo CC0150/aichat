@@ -27,14 +27,39 @@ The server reads its config from `server/.env` (not the repo root's `.env.local`
 DEEPSEEK_API_KEY=sk-xxx
 DEEPSEEK_BASE_URL=https://api.deepseek.com/v1   # default
 DEEPSEEK_MODEL=deepseek-v4-flash                 # default
-PORT=3001                                        # default
+PORT=3001                                        # default (falls back to 8787 if unset)
 ```
 
 Only two models are accepted: `deepseek-v4-flash` and `deepseek-v4-pro` (enforced by `sanitizeModel()` in `server/config/index.js`). Any other model name silently falls back to `DEEPSEEK_MODEL`.
 
+### Server boot sequence (`server/index.js`)
+
+1. `dotenv.config()` loads `server/.env`
+2. Config validation — warns if `DEEPSEEK_API_KEY` is missing but does not exit
+3. `setupMiddleware(app)` — compression → helmet → cors → body parser → rate limiter
+4. `setupRoutes(app)` — mounts all route handlers
+5. `setupErrorHandler(app)` — global error handler (must be last)
+6. `app.listen(PORT)` — starts listening
+
+### Frontend dependencies note
+
+`node-fetch` is listed in `package.json` dependencies but is not imported anywhere in `src/`. It's a vestigial dependency that can be safely removed.
+
 ## Architecture
 
 This is a Vue 3 + Express AI chat app focused on front-end developer interview practice. The frontend is a SPA (Vite + Pinia + Vue Router + Tailwind). The backend is a proxy that forwards chat and interview requests to the DeepSeek API via the OpenAI SDK (v6, `server/config/index.js`).
+
+### Path alias
+
+Vite resolves `@` → `src/` (configured in `vite.config.js`). All frontend imports use this alias (e.g. `@/utils/chatApi.js`, `@/components/Modal.vue`).
+
+### Bootstrap sequence (`src/main.js`)
+
+1. **Pinia** created with `pinia-plugin-persistedstate` (all stores auto-persist to localStorage)
+2. **Safari ITP compat**: `safeLocalStorage` wrapper catches errors from localStorage access in private browsing mode, exposed as `window.__safeLocalStorage__`
+3. **Theme flash prevention**: Before Vue mounts, reads `localStorage.getItem('app')` to set `html.dark` class immediately — avoids a white flash in dark mode
+4. **Plugin registration order**: Pinia → Router → FloatingVue (custom tooltip theme, 200ms show delay) → VueVirtualScroller → mount
+5. **Router `afterEach`** sets `document.title = '... - Intervy'` from route `meta.title`
 
 ### Routes
 
@@ -53,6 +78,8 @@ Server routes registered in `server/routes/index.js`:
 ### Server middleware (`server/middleware/index.js`)
 
 Applied in order: `compression()` → `helmet()` (with CSP for iconify) → `cors("*")` → `express.json(5mb)` → rate limiter (30 req/min per IP on `/api`) → global error handler.
+
+Also exports `writeSSEHeaders(res)` — writes SSE response headers (`text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no`) plus a 2048-char anti-buffer padding comment. Used by the chat route before streaming begins.
 
 ### AI interaction modes
 
@@ -105,7 +132,7 @@ All server AI calls flow through one of these two files: `deepseek.js` for SSE s
 
 ### Interview question sources (3 tabs in InterviewView)
 
-1. **题库出题** — Local hardcoded question bank (`src/data/questions/`). `selectQuestions()` does stratified random sampling (40% easy / 40% medium / 20% hard when difficulty is `'all'`; uniform random when a single difficulty is selected). Four presets: `frontend` (all 6 categories), `js-core`, `vue-special`, `css-html`.
+1. **题库出题** — Local hardcoded question bank (`src/data/questions/`). Six category files: `html.js`, `css.js`, `js.js`, `vue.js`, `react.js`, `engineering.js` — each exports an array of question objects (`{ id, category, difficulty, knowledgePoints, question }`). `index.js` aggregates them into `allQuestions`, `questionsByCategory`, and exports `selectQuestions()` for stratified random sampling (40% easy / 40% medium / 20% hard when difficulty is `'all'`; uniform random when a single difficulty is selected; falls back to random fill if a difficulty tier is underpopulated). Four presets: `frontend` (all 6 categories, 10 questions), `js-core` (6), `vue-special` (5), `css-html` (6).
 2. **文件出题** — User uploads a file → parsed client-side → `POST /api/questions/generate` → AI generates questions from content (or `POST /api/questions/generate-by-role` for a target job title).
 3. **知识库出题** — User selects a knowledge base → `POST /api/knowledge/:id/generate` → server aggregates all KB files → AI generates questions.
 
@@ -138,6 +165,19 @@ Messages use `vue3-virtual-scroller`'s `<RecycleScroller>` for DOM-efficient ren
 - **`observeItem(el, id)`** is a `:ref` callback — `RecycleScroller` calls it when items mount/unmount. It creates a `ResizeObserver` per item and schedules height updates
 - **`schedule()`/`flush()`** batch height changes via RAF with a 160ms throttle, then **mutate `virtualMessages` items in-place** (set `.size` on existing objects) so the array reference stays stable and `RecycleScroller` doesn't full-rebuild
 - `estimateMessageHeight()` provides initial height guesses (CJK-aware char counting + image overhead) before ResizeObserver measurements kick in
+
+### Voice input (`src/composables/useSpeechRecognition.js`)
+
+Web Speech API composable for Chinese (`zh-CN`) voice-to-text. Used by `ChatInput.vue`:
+
+- `init()` — creates `SpeechRecognition` instance (with `webkitSpeechRecognition` fallback for Safari), sets `continuous: true`, `interimResults: false`. Call in `onMounted`.
+- `toggle()` — start/stop recording. Returns `false` if browser doesn't support it.
+- `stop()` — called in `onUnmounted` to clean up.
+- `isRecording` / `supported` — reactive refs for UI state.
+
+### Model selection flow
+
+`modelConfig.js` defines two models: `deepseek-v4-flash` (default) and `deepseek-v4-pro`. Neither supports vision. The `app` store holds `currentModelId` (persisted). `ChatInput` reads `currentModel` from the store and passes it to API calls. On regenerate, `MessageArea` also reads from the same store. If localStorage contains an invalid model id, it falls back to the first option.
 
 ### Key dependencies
 

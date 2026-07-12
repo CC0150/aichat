@@ -8,18 +8,28 @@ const props = defineProps({
   content: { type: String, default: '' },
 })
 
+/** 根容器 DOM 引用（用于事件委托监听复制按钮点击） */
 const rootRef = ref(null)
 
+// 初始化 markdown-it 实例：禁止 HTML 标签，启用自动链接识别
 const md = new MarkdownIt({ html: false, linkify: true })
 
+/**
+ * 自定义围栏代码块（```）的渲染规则
+ * 将普通 <pre><code> 替换为带语言标签、语法高亮和复制按钮的卡片式代码块
+ * 代码内容通过 base64 编码存入 data 属性，点击复制时解码还原
+ */
 md.renderer.rules.fence = (tokens, idx) => {
   const token = tokens[idx]
+  // 提取语言标识（如 "javascript"、"python"），去掉可能的 "language-" 前缀
   const lang = (token.info.trim().split(/\s+/)[0] || 'text').replace(/^language-/, '')
   const code = token.content
+  // 有 highlight.js 支持的语言则高亮，否则做 HTML 转义
   const highlighted =
     lang && hljs.getLanguage(lang)
       ? hljs.highlight(code, { language: lang }).value
       : md.utils.escapeHtml(code)
+  // 将代码转为 base64 存储以避免 DOM 属性中的特殊字符问题
   const codeBase64 = typeof btoa !== 'undefined' ? btoa(unescape(encodeURIComponent(code))) : ''
   return `
     <div class="code-block-wrapper">
@@ -35,14 +45,21 @@ md.renderer.rules.fence = (tokens, idx) => {
   `.trim()
 }
 
+/** 将 markdown 内容渲染为 HTML 字符串 */
 const html = computed(() => md.render(props.content || ''))
 
+/**
+ * 复制代码按钮的事件委托处理
+ * 从按钮的 data-code-base64 属性解码还原原始代码并写入剪贴板
+ * 点击后按钮文字临时变为 "Copied"，1.5s 后恢复
+ */
 function handleCopyCode(e) {
   const btn = e.target.closest('.code-block-copy-btn')
   if (!btn) return
   const b64 = btn.getAttribute('data-code-base64')
   if (!b64) return
   try {
+    // base64 → 原始代码（兼容 CJK 字符的编码路径）
     const text = decodeURIComponent(escape(typeof atob !== 'undefined' ? atob(b64) : ''))
     navigator.clipboard.writeText(text)
     const span = btn.querySelector('span')
@@ -56,6 +73,7 @@ function handleCopyCode(e) {
   } catch (_) {}
 }
 
+// 使用事件委托监听代码复制按钮点击
 onMounted(() => {
   rootRef.value?.addEventListener('click', handleCopyCode)
 })

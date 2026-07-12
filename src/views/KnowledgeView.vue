@@ -5,53 +5,70 @@ import { useKnowledgeStore } from '@/stores/knowledge'
 import { parseFile } from '@/utils/docParser'
 import Modal from '@/components/Modal.vue'
 
+/** 知识库状态（列表、当前详情、文件等） */
 const store = useKnowledgeStore()
 
-const viewMode = ref('list') // 'list' | 'detail'
+/** 当前视图模式：'list'（列表）或 'detail'（详情） */
+const viewMode = ref('list')
+/** 当前查看详情的知识库 ID */
 const detailKbId = ref(null)
 
 // 创建 KB modal
+/** 创建知识库弹窗是否可见 */
 const showCreateModal = ref(false)
+/** 新建知识库名称 */
 const newName = ref('')
+/** 新建知识库描述 */
 const newDescription = ref('')
 
 // 删除确认
+/** 删除确认弹窗是否可见 */
 const showDeleteModal = ref(false)
+/** 待删除的知识库对象 */
 const deleteTarget = ref(null)
 
 // 文件上传
+/** 文件选择 input DOM 引用 */
 const fileInputRef = ref(null)
+/** 是否正在解析上传的文件 */
 const isParsing = ref(false)
+/** 文件上传错误信息 */
 const uploadError = ref('')
 
+// 页面挂载时加载知识库列表
 onMounted(() => {
   store.fetchKBs()
 })
 
 // ===== KB 列表操作 =====
 
+/** 打开新建知识库弹窗（重置表单字段） */
 function openCreate() {
   newName.value = ''
   newDescription.value = ''
   showCreateModal.value = true
 }
 
+/** 创建知识库：名称必填，描述可选 */
 async function handleCreate() {
   if (!newName.value.trim()) return
   await store.createKB(newName.value.trim(), newDescription.value.trim())
   showCreateModal.value = false
 }
 
+/** 打开删除知识库确认弹窗 */
 function confirmDeleteKB(kb) {
   deleteTarget.value = kb
   showDeleteModal.value = true
 }
 
+/** 关闭删除确认弹窗 */
 function closeDeleteModal() {
   showDeleteModal.value = false
   deleteTarget.value = null
 }
 
+/** 执行删除知识库 */
 async function handleDeleteKB() {
   if (!deleteTarget.value) return
   await store.deleteKB(deleteTarget.value.id)
@@ -61,22 +78,31 @@ async function handleDeleteKB() {
 
 // ===== KB 详情操作 =====
 
+/** 进入知识库详情视图（加载文件列表） */
 function openDetail(kbId) {
   detailKbId.value = kbId
   store.fetchKB(kbId)
   viewMode.value = 'detail'
 }
 
+/** 返回知识库列表视图 */
 function backToList() {
   viewMode.value = 'list'
   detailKbId.value = null
   store.clearCurrent()
 }
 
+/** 触发文件选择对话框 */
 function triggerUpload() {
   if (fileInputRef.value) fileInputRef.value.click()
 }
 
+/**
+ * 处理文件上传到知识库
+ * 1. 客户端解析文件内容（PDF/Word/TXT）
+ * 2. 内容需 >= 50 字才接受
+ * 3. 上传到服务器后刷新详情列表
+ */
 async function handleFileUpload(event) {
   const files = Array.from(event.target.files || [])
   if (!files.length) return
@@ -94,7 +120,7 @@ async function handleFileUpload(event) {
       type: parsed.type,
       content: parsed.text,
     })
-    // 刷新详情
+    // 刷新详情以展示新上传的文件
     await store.fetchKB(detailKbId.value)
   } catch (err) {
     uploadError.value = err.message || '文件上传失败'
@@ -104,10 +130,12 @@ async function handleFileUpload(event) {
   }
 }
 
+/** 删除知识库中的指定文件 */
 async function handleDeleteFile(fileId) {
   await store.deleteFile(detailKbId.value, fileId)
 }
 
+/** 格式化 ISO 日期为中文短格式（如 "2026年7月12日"） */
 function formatDate(iso) {
   if (!iso) return ''
   return new Date(iso).toLocaleDateString('zh-CN', {
@@ -117,6 +145,7 @@ function formatDate(iso) {
   })
 }
 
+/** 格式化文件大小：<1000 字直接显示，>=1000 显示 "x.xK 字" */
 function formatFileSize(charCount) {
   if (charCount < 1000) return `${charCount} 字`
   return `${(charCount / 1000).toFixed(1)}K 字`

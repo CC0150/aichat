@@ -7,15 +7,23 @@ import { useChatStore } from '@/stores/chat'
 import Logo from './Logo.vue'
 import Modal from './Modal.vue'
 
+/** Vue Router 实例 */
 const router = useRouter()
+/** 当前路由信息（用于高亮当前导航项） */
 const route = useRoute()
+/** 全局应用状态（主题、侧边栏等） */
 const appStore = useAppStore()
+/** 聊天状态（对话历史、当前对话等） */
 const chatStore = useChatStore()
 
+/** 搜索输入框的实时值 */
 const searchQuery = ref('')
+/** 经过 200ms 防抖后的搜索关键词，用于过滤历史列表 */
 const debouncedQuery = ref('')
+/** 防抖定时器句柄 */
 let debounceTimer = null
 
+// 搜索防抖：用户停止输入 200ms 后才更新过滤关键词，减少不必要的 computed 重算
 watch(searchQuery, (val) => {
   clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
@@ -23,62 +31,77 @@ watch(searchQuery, (val) => {
   }, 200)
 })
 
+// 组件卸载时清理防抖定时器，防止内存泄漏
 onUnmounted(() => {
   clearTimeout(debounceTimer)
 })
 
+/** 根据搜索关键词过滤聊天历史列表 */
 const filteredHistory = computed(() => {
   const q = debouncedQuery.value.trim().toLowerCase()
   if (!q) return chatStore.history
   return chatStore.history.filter((c) => c.title.toLowerCase().includes(q))
 })
 
+/** 重命名弹窗是否可见 */
 const isRenameModalOpen = ref(false)
+/** 当前正在重命名的对话 ID */
 const renamingChatId = ref(null)
+/** 重命名弹窗中输入的新标题 */
 const newChatTitle = ref('')
 
+/** 删除确认弹窗是否可见 */
 const isDeleteModalOpen = ref(false)
+/** 待删除的对话 ID */
 const deletingChatId = ref(null)
 
+/** 创建新对话：清空当前对话 ID 并导航到聊天首页 */
 function goNewChat() {
   chatStore.setCurrentChat(null)
   router.push({ name: 'Chat' })
   appStore.closeSidebar()
 }
 
+/** 导航到 AI 面试页面 */
 function goInterview() {
   router.push({ name: 'Interview' })
   appStore.closeSidebar()
 }
 
+/** 导航到面试记录统计页面 */
 function goStats() {
   router.push({ name: 'Stats' })
   appStore.closeSidebar()
 }
 
+/** 导航到知识库管理页面 */
 function goKnowledge() {
   router.push({ name: 'Knowledge' })
   appStore.closeSidebar()
 }
 
+/** 切换到指定 ID 的历史对话 */
 function goChat(id) {
   chatStore.setCurrentChat(id)
   router.push({ name: 'ChatById', params: { id } })
   appStore.closeSidebar()
 }
 
+/** 打开重命名弹窗，预填当前对话标题 */
 function startRename(item) {
   renamingChatId.value = item.id
   newChatTitle.value = item.title
   isRenameModalOpen.value = true
 }
 
+/** 关闭重命名弹窗并重置状态 */
 function closeRenameModal() {
   isRenameModalOpen.value = false
   renamingChatId.value = null
   newChatTitle.value = ''
 }
 
+/** 保存重命名：去除首尾空格后提交到 store，空标题不保存 */
 function saveRename() {
   if (renamingChatId.value) {
     const trimmedTitle = newChatTitle.value.trim()
@@ -89,12 +112,14 @@ function saveRename() {
   closeRenameModal()
 }
 
+/** 打开删除确认弹窗（阻止事件冒泡以防触发导航） */
 function handleDelete(id, e) {
   e?.stopPropagation()
   deletingChatId.value = id
   isDeleteModalOpen.value = true
 }
 
+/** 确认删除对话：从历史中移除，若删除的是当前对话则回退到首页 */
 function confirmDelete() {
   if (deletingChatId.value) {
     chatStore.removeFromHistory(deletingChatId.value)
@@ -105,6 +130,7 @@ function confirmDelete() {
   closeDeleteModal()
 }
 
+/** 关闭删除确认弹窗并重置状态 */
 function closeDeleteModal() {
   isDeleteModalOpen.value = false
   deletingChatId.value = null

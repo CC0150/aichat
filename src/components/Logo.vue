@@ -1,4 +1,9 @@
 <script setup>
+/**
+ * Logo 组件
+ * @param {number} size - Logo SVG 尺寸（宽高相等），默认 32px
+ * @param {boolean} showText - 是否显示 "Intervy" 文字，默认不显示
+ */
 defineProps({
   size: { type: Number, default: 32 },
   showText: { type: Boolean, default: false },
