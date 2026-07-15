@@ -9,6 +9,7 @@ const { sanitizeString, validateEnum, clampNumber } = require("../utils/validate
 const { chunkText } = require("../services/chunker")
 const { getEmbedding } = require("../services/embedding")
 const { addChunks, deleteByKB, deleteByFile } = require("../services/vectorStore")
+const { normalizeText } = require("../utils/normalizeText")
 
 const router = Router()
 
@@ -172,22 +173,24 @@ router.post("/:id/files", async (req, res) => {
     if (!meta) return res.status(404).json({ error: "知识库不存在" })
 
     const fileId = `f-${Date.now()}`
+    // 清洗 PDF 解析乱码
+    const cleanedContent = type === 'pdf' ? normalizeText(content) : content
     const fileRecord = {
       id: fileId,
       name,
       type,
-      charCount: content.length,
+      charCount: cleanedContent.length,
       uploadedAt: new Date().toISOString(),
     }
 
-    await writeFileContent(id, fileId, content)
+    await writeFileContent(id, fileId, cleanedContent)
     meta.files.push(fileRecord)
     await writeMeta(id, meta)
 
     // RAG 入库：切块 → embedding → 存向量库（异步，不阻塞接口响应）
     setImmediate(async () => {
       try {
-        const chunks = chunkText(content, { chunkSize: 500, overlap: 100 })
+        const chunks = chunkText(cleanedContent, { chunkSize: 500, overlap: 100 })
         if (chunks.length === 0) return
         const vectors = await getEmbedding(chunks)
         await addChunks(
@@ -340,6 +343,42 @@ router.post("/:id/generate", async (req, res) => {
       fallbackMessage: "题目生成服务异常",
       extras: { questions: [] },
     })
+  }
+})
+
+/** POST /api/knowledge/:id/agent-generate — Agent 驱动出题 */
+router.post("/:id/agent-generate", async (req, res) => {
+  const { id } = req.params
+  const count = clampNumber(req.body?.questionCount, 1, 20, 5)
+  const difficulty = validateEnum(req.body?.difficulty, ["all", "easy", "medium", "hard"], "all")
+  const model = sanitizeString(req.body?.model, { required: false }) || DEFAULT_MODEL
+
+  try {
+    const meta = await readMeta(id)
+    if (!meta) return res.status(404).json({ error: "知识库不存在" })
+    if (!meta.files || meta.files.length === 0) return res.status(400).json({ error: "知识库中没有文件" })
+
+    const { agentGenerateQuestions } = require("../services/agent")
+    const result = await agentGenerateQuestions({ kbId: id, count, difficulty, model })
+    res.json(result)
+  } catch (err) {
+    handleAIError(res, err, "knowledge/agent-generate", { fallbackMessage: "Agent 出题异常", extras: { questions: [] } })
+  }
+})
+
+/** POST /api/knowledge/:id/reindex — 重新索引知识库 */
+router.post("/:id/reindex", async (req, res) => {
+  const { id } = req.params
+  try {
+    const meta = await readMeta(id)
+    if (!meta) return res.status(404).json({ error: "知识库不存在" })
+
+    const { reindexKB } = require("../services/agent")
+    const result = await reindexKB(id)
+    res.json(result)
+  } catch (err) {
+    console.error("[knowledge] 重新索引失败:", err.message)
+    res.status(500).json({ error: err.message || "重新索引失败" })
   }
 })
 

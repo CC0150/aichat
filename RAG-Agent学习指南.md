@@ -732,10 +732,10 @@ app.use('/api/rag', require('./rag'))
 ### 3.5 Agent 实现（Vercel AI SDK）
 
 ```bash
-npm install ai @ai-sdk/openai zod
+npm install ai @ai-sdk/deepseek zod
 ```
 
-**注意**：Vercel AI SDK 是 ESM 包，你的项目是 CommonJS。处理策略：
+**注意**：用 `@ai-sdk/deepseek`（DeepSeek 官方 provider），**不是** `@ai-sdk/openai`。`@ai-sdk/openai` v4 默认调 OpenAI Responses API（`/v1/responses`），DeepSeek 不支持，会 404。官方 provider 走的是 Chat Completions API，兼容性没问题。
 
 | 方案 | 做法 | 适合 |
 |------|------|------|
@@ -750,10 +750,10 @@ npm install ai @ai-sdk/openai zod
 ```js
 // server/services/agent.mjs
 import { generateText, streamText, tool } from 'ai'
-import { createOpenAI } from '@ai-sdk/openai'
+import { createDeepSeek } from '@ai-sdk/deepseek'
 import { z } from 'zod'
 
-const deepseek = createOpenAI({
+const deepseek = createDeepSeek({
   baseURL: 'https://api.deepseek.com/v1',
   apiKey: process.env.DEEPSEEK_API_KEY
 })
@@ -987,7 +987,7 @@ await deleteByFileId(fileId)
   4. 读本文档 Agent 防呆 + 边界（2.6-2.8）（1h）
 
 下午（3h）：Vercel AI SDK 动手
-  1. 装 ai + @ai-sdk/openai + zod
+  1. 装 ai + @ai-sdk/deepseek + zod
   2. 定义一个简单 tool（比如 getCurrentTime），跑通 tool calling（1h）
   3. 加 2 个你项目的真实工具，跑通完整 Agent（1.5h）
   4. 改成 streamText 流式输出（0.5h）
@@ -1014,9 +1014,10 @@ await deleteByFileId(fileId)
 
 1. **DeepSeek 没有 Embedding API**，用硅基流动替代，模型选 `BAAI/bge-large-zh-v1.5`
 2. **LanceDB npm 包名是 `@lancedb/lancedb`**，`vectordb` 已废弃
-3. **Vercel AI SDK 是 ESM 包**，你的 CommonJS 项目需要 `.mjs` 或动态 `import()`
-4. **Agent 的工具定义用 Zod 写 Schema**，比手写 JSON Schema 多了类型安全
-5. **硅基流动免费额度有限**，测试时别批量跑几百个文件
+3. **用 `@ai-sdk/deepseek` 而不是 `@ai-sdk/openai`** — 后者 v4 默认走 OpenAI Responses API，DeepSeek 只支持 Chat Completions
+4. **Vercel AI SDK 是 ESM 包**，你的 CommonJS 项目需要 `.mjs` 或动态 `import()`
+5. **Agent 的工具定义用 Zod 写 Schema**，比手写 JSON Schema 多了类型安全
+6. **硅基流动免费额度有限**，测试时别批量跑几百个文件
 
 ---
 

@@ -3,7 +3,7 @@ import { ref, reactive, watch, computed, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useInterviewStore } from '@/stores/interview'
 import { useAppStore } from '@/stores/app'
-import { requestScore, requestEvaluate } from '@/utils/interviewApi'
+import { requestScore, requestEvaluate, requestAgentEvaluate } from '@/utils/interviewApi'
 import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
 
 const emit = defineEmits(['quit'])
@@ -20,6 +20,8 @@ const codeAnswer = ref('')
 const isScoring = ref(false)
 /** 评分过程中的错误信息 */
 const scoreError = ref('')
+/** Agent 工具调用记录（前端展示用） */
+const agentSteps = ref([])
 /** 普通题 textarea DOM 引用 */
 const textareaRef = ref(null)
 /** 代码编辑器 textarea DOM 引用 */
@@ -206,14 +208,28 @@ async function handleSubmit() {
 
     try {
       const conversationHistory = interviewStore.conversations[q.id] || []
-      const result = await requestEvaluate({
-        question: q.question,
-        answerPoints: q.answerPoints,
-        conversationHistory,
-        model: appStore.currentModelId,
-      })
+      // 有知识库时用 Agent 评估（自动搜索 KB + 评分 + 追问决策）
+      const hasKB = !!interviewStore.kbId
+      const result = hasKB
+        ? await requestAgentEvaluate({
+            question: q.question,
+            answerPoints: q.answerPoints,
+            conversationHistory,
+            kbId: interviewStore.kbId,
+            model: appStore.currentModelId,
+          })
+        : await requestEvaluate({
+            question: q.question,
+            answerPoints: q.answerPoints,
+            conversationHistory,
+            model: appStore.currentModelId,
+          })
 
       const action = interviewStore.handleEvaluateResult(q.id, result)
+
+      // 存储 Agent 步骤以展示"Agent 做了什么"
+      if (result.agentSteps?.length) agentSteps.value = result.agentSteps
+      else agentSteps.value = []
 
       if (action === 'follow_up') {
         // AI 决定继续追问 → 显示追问问题，保留当前答案输入区
@@ -229,17 +245,8 @@ async function handleSubmit() {
       delete draftAnswers[q.id]
     } catch (err) {
       scoreError.value = err.message || '评估失败'
-      // 降级为默认评分，确保面试流程不被中断
-      interviewStore.saveScore(q.id, {
-        score: 5,
-        correctness: 5,
-        completeness: 5,
-        clarity: 5,
-        feedback: `评估服务异常：${err.message}。已为你生成默认评分。`,
-        improvedAnswer: '',
-      })
-      followUpQuestion.value = ''
-      currentRound.value = 0
+      interviewStore.phase = 'answering' // 回到答题状态，允许重试
+      // 不自动保存默认分，让用户选择重试或手动跳过
     } finally {
       isScoring.value = false
     }
@@ -259,14 +266,7 @@ async function handleSubmit() {
       interviewStore.saveScore(q.id, result)
     } catch (err) {
       scoreError.value = err.message || '评分失败'
-      interviewStore.saveScore(q.id, {
-        score: 5,
-        correctness: 5,
-        completeness: 5,
-        clarity: 5,
-        feedback: `评分服务异常：${err.message}。以下为默认评分，请重新提交或稍后重试。`,
-        improvedAnswer: '',
-      })
+      interviewStore.phase = 'answering'
     } finally {
       isScoring.value = false
     }
@@ -274,12 +274,76 @@ async function handleSubmit() {
 }
 
 /** 进入下一题：重置输入状态并推进到下一题 */
+/** 重新评分（评估失败时调用） */
+async function retryScore() {
+  const q = interviewStore.currentQuestion
+  if (!q || isScoring.value) return
+
+  scoreError.value = ''
+  isScoring.value = true
+
+  try {
+    const conversationHistory = interviewStore.conversations[q.id] || []
+    const hasKB = !!interviewStore.kbId
+    const result = hasKB
+      ? await requestAgentEvaluate({
+          question: q.question,
+          answerPoints: q.answerPoints,
+          conversationHistory,
+          kbId: interviewStore.kbId,
+          model: appStore.currentModelId,
+        })
+      : await requestEvaluate({
+          question: q.question,
+          answerPoints: q.answerPoints,
+          conversationHistory,
+          model: appStore.currentModelId,
+        })
+
+    const action = interviewStore.handleEvaluateResult(q.id, result)
+    if (result.agentSteps?.length) agentSteps.value = result.agentSteps
+    else agentSteps.value = []
+    if (action === 'follow_up') {
+      followUpQuestion.value = result.followUpQuestion
+      currentRound.value++
+      userAnswer.value = ''
+      codeAnswer.value = ''
+    } else {
+      followUpQuestion.value = ''
+      currentRound.value = 0
+    }
+  } catch (err) {
+    scoreError.value = err.message || '重试失败'
+    interviewStore.phase = 'answering'
+  } finally {
+    isScoring.value = false
+  }
+}
+
+/** 跳过评分（评估失败时使用默认分继续） */
+function skipScore() {
+  const q = interviewStore.currentQuestion
+  if (!q) return
+  interviewStore.saveScore(q.id, {
+    score: 5,
+    correctness: 5,
+    completeness: 5,
+    clarity: 5,
+    feedback: '评分服务异常，已跳过此题。',
+    improvedAnswer: '',
+  })
+  followUpQuestion.value = ''
+  currentRound.value = 0
+  scoreError.value = ''
+}
+
 function handleNext() {
   userAnswer.value = ''
   codeAnswer.value = ''
   scoreError.value = ''
   followUpQuestion.value = ''
   currentRound.value = 0
+  agentSteps.value = []
   interviewStore.nextQuestion()
 }
 
@@ -470,6 +534,60 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <!-- Agent 工具调用记录 -->
+        <div
+          v-if="agentSteps.length > 0 && interviewStore.phase === 'answering'"
+          class="mb-4 space-y-2"
+        >
+          <div
+            class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary"
+          >
+            <Icon icon="lucide:bot" class="h-3.5 w-3.5" />
+            <span>AI Agent 工作记录（{{ agentSteps.length }} 步）</span>
+          </div>
+          <div
+            v-for="(step, si) in agentSteps"
+            :key="si"
+            class="rounded-lg border border-border bg-surface-elevated px-3 py-2.5"
+          >
+            <div class="flex items-start gap-2">
+              <Icon
+                v-if="step.toolName === 'searchKnowledgeBase'"
+                icon="lucide:search"
+                class="mt-0.5 h-4 w-4 shrink-0 text-blue-500"
+              />
+              <Icon
+                v-else-if="step.toolName === 'gradeAnswer'"
+                icon="lucide:clipboard-check"
+                class="mt-0.5 h-4 w-4 shrink-0 text-emerald-500"
+              />
+              <Icon v-else icon="lucide:wrench" class="mt-0.5 h-4 w-4 shrink-0 text-text-muted" />
+              <div class="min-w-0 flex-1">
+                <div class="text-[13px] font-medium text-text-primary">
+                  <template v-if="step.toolName === 'searchKnowledgeBase'"> 搜索知识库 </template>
+                  <template v-else-if="step.toolName === 'gradeAnswer'"> 评估考生回答 </template>
+                  <template v-else>
+                    {{ step.toolName }}
+                  </template>
+                </div>
+                <div class="mt-0.5 text-[12px] leading-relaxed text-text-muted">
+                  <template v-if="step.toolName === 'searchKnowledgeBase'">
+                    查询词：<span class="text-text-secondary">{{ step.args?.query || '—' }}</span>
+                  </template>
+                  <template v-else-if="step.toolName === 'gradeAnswer'">
+                    题目：{{ (step.args?.question || '').slice(0, 50)
+                    }}{{ (step.args?.question || '').length > 50 ? '...' : '' }}
+                  </template>
+                  <template v-else>
+                    <code class="text-[11px]">{{ JSON.stringify(step.args) }}</code>
+                  </template>
+                </div>
+              </div>
+              <span class="shrink-0 text-[11px] text-text-muted">#{{ si + 1 }}</span>
+            </div>
+          </div>
+        </div>
+
         <!-- 追问指示器 -->
         <div
           v-if="followUpQuestion && interviewStore.phase === 'answering'"
@@ -600,6 +718,41 @@ onUnmounted(() => {
               >
               <span v-else>提交回答</span>
             </button>
+          </div>
+
+          <!-- 评估失败时的重试/跳过 -->
+          <div
+            v-if="scoreError && interviewStore.phase === 'answering'"
+            class="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3"
+          >
+            <div class="flex items-start gap-2">
+              <Icon icon="lucide:alert-triangle" class="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-medium text-amber-600">评估失败</p>
+                <p class="mt-0.5 text-xs text-amber-500">{{ scoreError }}</p>
+              </div>
+            </div>
+            <div class="mt-3 flex gap-2">
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[13px] font-medium text-white transition-colors hover:brightness-110"
+                :disabled="isScoring"
+                @click="retryScore"
+              >
+                <Icon v-if="isScoring" icon="lucide:loader-2" class="h-3.5 w-3.5 animate-spin" />
+                <Icon v-else icon="lucide:refresh-cw" class="h-3.5 w-3.5" />
+                {{ isScoring ? '重试中...' : '重新点评' }}
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-elevated px-4 py-2 text-[13px] font-medium text-text-secondary transition-colors hover:bg-surface-input"
+                :disabled="isScoring"
+                @click="skipScore"
+              >
+                <Icon icon="lucide:skip-forward" class="h-3.5 w-3.5" />
+                跳过此题
+              </button>
+            </div>
           </div>
         </div>
 

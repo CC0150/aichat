@@ -8,6 +8,7 @@ import { interviewTypes } from '@/data/questions/index.js'
 import { requestGenerateQuestions, requestGenerateQuestionsByRole } from '@/utils/interviewApi'
 import { parseFile } from '@/utils/docParser'
 import { useKnowledgeStore } from '@/stores/knowledge'
+import { agentGenerateFromKB, createKnowledgeBase, uploadFileToKB } from '@/utils/knowledgeApi'
 import InterviewSession from '@/components/interview/InterviewSession.vue'
 
 const router = useRouter()
@@ -108,10 +109,26 @@ const isParsing = ref(false)
 const isGenerating = ref(false)
 /** 文件模式的错误信息 */
 const fileError = ref('')
+/** 拖拽悬停状态 */
+const isDragOver = ref(false)
 
 /** 触发文件选择对话框 */
 function triggerFileSelect() {
   if (fileInputRef.value) fileInputRef.value.click()
+}
+
+/** 处理拖拽上传 */
+function handleDrop(e) {
+  isDragOver.value = false
+  const files = e.dataTransfer?.files
+  if (!files?.length) return
+  // 模拟 input change 事件
+  const dt = new DataTransfer()
+  dt.items.add(files[0])
+  if (fileInputRef.value) {
+    fileInputRef.value.files = dt.files
+    fileInputRef.value.dispatchEvent(new Event('change'))
+  }
 }
 
 /**
@@ -181,10 +198,12 @@ const selectedKBId = ref(null)
 const isKBGenerating = ref(false)
 /** 知识库模式的错误信息 */
 const kbError = ref('')
+/** 是否使用 Agent 驱动出题 */
+const useAgentGenerate = ref(true)
 
-/** 选择知识库（清除之前的错误） */
+/** 选择/取消选择知识库 */
 function selectKB(kbId) {
-  selectedKBId.value = kbId
+  selectedKBId.value = selectedKBId.value === kbId ? null : kbId
   kbError.value = ''
 }
 
@@ -193,21 +212,51 @@ function selectKB(kbId) {
  * 调用 store.generateQuestions → /api/knowledge/:id/generate
  */
 async function startKBInterview() {
+  if (isKBGenerating.value) return
+  // 快速上传模式：先创建 KB 再出题
+  if (uploadedFile.value && !selectedKBId.value) {
+    isKBGenerating.value = true
+    kbError.value = ''
+    try {
+      // 创建临时知识库
+      const kb = await createKnowledgeBase({ name: uploadedFile.value.name, description: '快速上传' })
+      await uploadFileToKB(kb.id, { name: uploadedFile.value.name, type: uploadedFile.value.type, content: uploadedFile.value.text })
+      // 刷新 KB 列表
+      await knowledgeStore.fetchKBs()
+      selectedKBId.value = kb.id
+    } catch (err) {
+      kbError.value = err.message || '创建知识库失败'
+      isKBGenerating.value = false
+      return
+    }
+  }
+
   if (!selectedKBId.value || isKBGenerating.value) return
+
   isKBGenerating.value = true
   kbError.value = ''
   try {
-    const result = await knowledgeStore.generateQuestions(selectedKBId.value, {
-      questionCount: questionCount.value,
-      difficulty: difficulty.value,
-      model: appStore.currentModelId,
-    })
+    let result
+    if (useAgentGenerate.value) {
+      result = await agentGenerateFromKB(selectedKBId.value, {
+        questionCount: questionCount.value,
+        difficulty: difficulty.value,
+        model: appStore.currentModelId,
+      })
+    } else {
+      result = await knowledgeStore.generateQuestions(selectedKBId.value, {
+        questionCount: questionCount.value,
+        difficulty: difficulty.value,
+        model: appStore.currentModelId,
+      })
+    }
     if (!result.questions || result.questions.length === 0) {
       kbError.value = result.error || 'AI 未能生成有效题目，请重试。'
       return
     }
     const kb = knowledgeStore.kbs.find((k) => k.id === selectedKBId.value)
     interviewStore.loadCustomQuestions(result.questions, kb ? `知识库：${kb.name}` : '知识库')
+    interviewStore.kbId = selectedKBId.value
   } catch (err) {
     kbError.value = err.message || '题目生成失败，请重试'
   } finally {
@@ -397,7 +446,6 @@ function handleExportBackdropClick(e) {
           <button
             v-for="tab in [
               { key: 'bank', label: '题库出题', icon: 'lucide:library' },
-              { key: 'file', label: '文件出题', icon: 'lucide:file-up' },
               { key: 'knowledge', label: '知识库出题', icon: 'lucide:database' },
             ]"
             :key="tab.key"
@@ -484,8 +532,8 @@ function handleExportBackdropClick(e) {
           </div>
         </template>
 
-        <!-- 文件模式 -->
-        <template v-if="activeTab === 'file'">
+        <!-- 纯文件模式（合并到知识库） -->
+        <template v-if="false">
           <!-- 文件上传区域（未上传时） -->
           <div
             v-if="!uploadedFile && !isParsing"
@@ -610,9 +658,77 @@ function handleExportBackdropClick(e) {
             </router-link>
           </div>
 
+          <!-- 快速上传 -->
+          <div v-else class="mt-4 space-y-3">
+            <!-- 未上传时 -->
+            <div v-if="!uploadedFile && !isParsing">
+              <div
+                class="flex w-full cursor-pointer items-center gap-3 rounded-2xl border-2 border-dashed border-border px-4 py-4 text-left transition-all duration-200 hover:border-primary/50 hover:bg-surface-input/50"
+                :class="{ 'border-primary bg-primary-muted/20': isDragOver }"
+                @click="triggerFileSelect"
+                @dragover.prevent="isDragOver = true"
+                @dragleave.prevent="isDragOver = false"
+                @drop.prevent="handleDrop"
+              >
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-muted">
+                  <Icon icon="lucide:upload" class="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-text-primary">快速上传文件出题</p>
+                  <p class="text-xs text-text-muted">点击或拖拽上传 PDF/Word/TXT，自动创建知识库并生成题目</p>
+                </div>
+              </div>
+              <input
+                ref="fileInputRef"
+                type="file"
+                accept=".pdf,.docx,.txt,.md,.json,.csv"
+                class="hidden"
+                @change="handleFileUpload"
+              />
+            </div>
+            <!-- 已上传 -->
+            <div
+              v-if="uploadedFile && !fileError"
+              class="flex items-center justify-between rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3"
+            >
+              <div class="flex items-center gap-2 min-w-0">
+                <Icon icon="lucide:file-text" class="h-5 w-5 shrink-0 text-emerald-500" />
+                <span class="text-sm font-medium text-text-primary truncate">{{ uploadedFile.name }}</span>
+                <span class="shrink-0 text-xs text-text-muted">{{ uploadedFile.text.length }} 字</span>
+              </div>
+              <button
+                type="button"
+                class="ml-2 shrink-0 rounded-lg p-1.5 text-text-muted transition-colors hover:bg-red-500/10 hover:text-red-500"
+                @click="removeUploadedFile"
+              >
+                <Icon icon="lucide:x" class="h-4 w-4" />
+              </button>
+            </div>
+            <!-- 解析中 -->
+            <div
+              v-if="isParsing"
+              class="flex items-center gap-3 rounded-2xl border border-border bg-surface-elevated px-4 py-3"
+            >
+              <div class="inline-block h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              <p class="text-sm text-text-muted">正在解析文件...</p>
+            </div>
+          </div>
+          <!-- 错误 -->
+          <p v-if="fileError" class="mt-2 text-xs text-red-500">{{ fileError }}</p>
+
           <!-- KB 选择列表 -->
           <div v-else class="mt-4 space-y-2.5">
-            <p class="text-xs font-medium text-text-secondary">选择一个知识库</p>
+            <div class="flex items-center justify-between">
+              <p class="text-xs font-medium text-text-secondary">或选择已有知识库</p>
+              <button
+                v-if="uploadedFile"
+                type="button"
+                class="text-xs text-primary hover:underline"
+                @click="removeUploadedFile"
+              >
+                清除上传
+              </button>
+            </div>
             <button
               v-for="kb in knowledgeStore.kbs"
               :key="kb.id"
@@ -775,12 +891,25 @@ function handleExportBackdropClick(e) {
             <Icon v-else icon="lucide:sparkles" class="h-4 w-4" />
             {{ isGenerating ? '正在生成题目...' : '生成题目并开始面试' }}
           </button>
+          <!-- Agent 出题开关 -->
+          <label
+            v-if="activeTab === 'knowledge'"
+            class="flex items-center gap-2 cursor-pointer text-[13px] text-text-secondary hover:text-text-primary"
+          >
+            <input
+              v-model="useAgentGenerate"
+              type="checkbox"
+              class="h-4 w-4 rounded accent-primary"
+            />
+            <span>Agent 出题（先搜索知识库再出题）</span>
+          </label>
+
           <!-- 知识库模式按钮 -->
           <button
             v-if="activeTab === 'knowledge'"
             type="button"
             class="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-medium text-white transition-all duration-200 hover:bg-primary/90 disabled:opacity-40"
-            :disabled="!selectedKBId || isKBGenerating"
+            :disabled="(!selectedKBId && !uploadedFile) || isKBGenerating"
             @click="startKBInterview"
           >
             <span

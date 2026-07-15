@@ -1,0 +1,89 @@
+【第 1 页】
+1  Composition   API   Vue3   Composition   Api Vue2 Composition   Api Options   API   vue   methods   comput ed   watch   data       
+
+【第 2 页】
+2  Options   data   me thods data   computed   methods   watch
+
+【第 3 页】
+3  Composition   Api   Options   Api       
+
+【第 4 页】
+4
+
+【第 5 页】
+5  Compositon   API count count    function   useCount()   { let   count   =   ref(10); let   double   =   computed(()   =>   { return   count.value   *   2; }); const   handleConut   =   ()   =>   { count.value   =   count.value   * 2; }; console.log(count); return   { count, double, handleConut, }; } 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18  export   default   defineComponent({ setup()   { const   {   count,   double,   handleConut   } =   useCount(); return   { count, double, handleConut } }, }); 1 2 3 4 5 6 7 8 9 10
+
+【第 6 页】
+6  Composition   API Vue2   mixin mixin.js  
+
+【第 7 页】
+7  export   const   MoveMixin   =   { data()   { return   { x:   0, y:   0, }; }, methods:   { handleKeyup(e)   { console.log(e.code); //   x   y switch   (e.code)   { case   "ArrowUp": this.y--; break; case   "ArrowDown": this.y++; break; case   "ArrowLeft": this.x--; break; case   "ArrowRight": this.x++; break; } }, }, mounted()   { window.addEventListener("keyup",   this.handleKeyup); }, unmounted()   { window.removeEventListener("keyup",   this.handleKeyup); }, }; 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37
+
+【第 8 页】
+8  mixin   mixins Compositon   API  <template> <div> Mouse   position:   x   {{   x   }}   /   y   {{   y   }} </div> </template> <script> import   mousePositionMixin   from   './mouse' export   default   { mixins:   [mousePositionMixin] } </script> 1 2 3 4 5 6 7 8 9 10 11  mixins:   [mousePositionMixin,   fooMixin,   barMixin,   otherMixin] 1
+
+【第 9 页】
+9  import   {   onMounted,   onUnmounted,   reactive   } from   "vue"; export   function   useMove()   { const   position   =   reactive({ x:   0, y:   0, }); const   handleKeyup   =   (e)   =>   { console.log(e.code); //   x   y switch   (e.code)   { case   "ArrowUp": //   y.value--; position.y--; break; case   "ArrowDown": //   y.value++; position.y++; break; case   "ArrowLeft": //   x.value--; position.x--; break; case   "ArrowRight": //   x.value++; position.x++; break; } }; onMounted(()   =>   { window.addEventListener("keyup",   handleKeyup); }); onUnmounted(()   =>   { window.removeEventListener("keyup",   handleKeyup); }); return   {   position   }; } 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40
+
+【第 10 页】
+10  Composition   API   Options   API Composition   API Composition   API   tree-shaking Composition   API   this   this Options   API      <template> <div> Mouse   position:   x   {{   x   }}   /   y   {{   y   }} </div> </template> <script> import   {   useMove   }   from   "./useMove"; import   {   toRefs   }   from   "vue"; export   default   { setup()   { const   {   position   }   =   useMove(); const   {   x,   y   }   =   toRefs(position); return   { x, y, }; }, }; </script> 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21
+
+【第 11 页】
+11  Vue3 bundle Vue3  
+
+【第 12 页】
+12  Vue3   API tree-shaking vue3   vue2   options   API   composition   API x   y      import   {   toRefs,   reactive   }   from   'vue'; function   useMouse(){ const   state   =   reactive({x:0,y:0}); const   update   =   e=>{ state.x   =   e.pageX; state.y   =   e.pageY; } onMounted(()=>{ window.addEventListener('mousemove',update); }) onUnmounted(()=>{ window.removeEventListener('mousemove',update); }) return   toRefs(state); } 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16
+
+【第 13 页】
+13  VUE3   typescipt vue3 vue3   monorepo   packages      
+
+【第 14 页】
+14  package   reactivity   Vue Vue3   Vue Vue3   typeScript    
+
+【第 15 页】
+15  vue3 vue2   Object.defineProperty Vue   set   delete vue3   proxy Proxy   Vue3   getter  Object.defineProperty(data,   'a',{ get(){ //   track }, set(){ //   trigger } }) 1 2 3 4 5 6 7 8  default   { data:   { a:   { b:   { c:   { d:   1 } } } } } 1 2 3 4 5 6 7 8 9 10 11
+
+【第 16 页】
+16  composition   API Composition   API options   API    
+
+【第 17 页】
+17  vue2   mixin   mixin composition hook      import   {   toRefs,   reactive,   onUnmounted,   onMounted }   from   'vue'; function   useMouse(){ const   state   =   reactive({x:0,y:0}); const   update   =   e=>{ state.x   =   e.pageX; state.y   =   e.pageY; } onMounted(()=>{ window.addEventListener('mousemove',update); }) onUnmounted(()=>{ window.removeEventListener('mousemove',update); }) return   toRefs(state); } 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16  import   useMousePosition   from   './mouse' export   default   { setup()   { const   {   x,   y   }   =   useMousePosition() return   {   x,   y   } } } 1 2 3 4 5 6 7
+
+【第 18 页】
+18  Bug Modal html vue   body import   API   
+
+【第 19 页】
+19  typeScript Modal app.use(Modal)   plugins modal.vue       ├──   plugins │   └──   modal │   ├──   Content.tsx   //   Modal   h   jsx │   ├──   Modal.vue   // │   ├──   config.ts   // │   ├──   index.ts   // │   ├──   locale   // │   │   ├──   index.ts │   │   └──   lang │   │   ├──   en-US.ts │   │   ├──   zh-CN.ts │   │   └──   zh-TW.ts │   └──   modal.type.ts   //   ts 1 2 3 4 5 6 7 8 9 10 11 12 13
+
+【第 20 页】
+20  Teleport   body DOM   modal  <Teleport   to="body"   :disabled="!isTeleport"> <div   v-if="modelValue"   class="modal"> <div class="mask" :style="style" @click="maskClose   && !loading   &&   handleCancel()" ></div> <div   class="modal__main"> <div   class="modal__title   line   line--b"> <span>{{   title   ||   t("r.title")   }}</span> <span v-if="close" :title="t('r.close')" class="close" @click="!loading   &&   handleCancel()" >✕</span > </div> <div   class="modal__content"> <Content   v-if="typeof   content   ===   'function'"   :render="con tent"   /> <slot   v-else> {{   content   }} </slot> </div> <div   class="modal__btns   line   line--t"> <button   :disabled="loading"   @click="handleConfirm"> <span   class="loading"   v-if="loading">   ❍   </span>{{   t ("r.confirm")   }} </button> <button   @click="!loading   && handleCancel()"> {{   t("r.cancel")   }} </button> </div> </div> </div> </Teleport> 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35
+
+【第 21 页】
+21  content Modal   content  <div   class="modal__content"> <Content   v-if="typeof   content==='function'" :render="content"   /> <slot   v-else> {{content}} </slot> </div> 1 2 3 4 5 6 7  // <Modal   v-model="show" title="   slot"> <div>hello   world~</div> </Modal> // <Modal   v-model="show" title="   content" content="hello   world~"   /> 1 2 3 4 5 6 7 8 9 10  $modal.show({ title:   '   h   ', content(h)   { return   h( 'div', { style:   'color:red;', onClick:   ($event:   Event)   => console.log('clicked',   $event.target) }, 'hello   world   ~' ); } }); 1 2 3 4 5 6 7 8 9 10 11 12 13
+
+【第 22 页】
+22  API   Modal Vue2   Vue   Vue.extend body Vue3   Vue.extend   createVNode Vue2   this    $modal.show({ title:   '   jsx   ', content()   { return   ( <div onClick={($event:   Event)   =>   console.log('clicked',   $event.target)} > hello   world   ~ </div> ); } }); 1 2 3 4 5 6 7 8 9 10 11 12  import   Modal   from   './Modal.vue'; const   ComponentClass   =   Vue.extend(Modal); const   instance   =   new   ComponentClass({   el:   document.createElement("div")   }); document.body.appendChild(instance.$el); 1 2 3 4  import   Modal   from   './Modal.vue'; const   container   =   document.createElement('div'); const   vnode   =   createVNode(Modal); render(vnode,   container); const   instance   =   vnode.component; document.body.appendChild(container); 1 2 3 4 5 6
+
+【第 23 页】
+23  setup   this app.config.globalProperties Modal   Vue3   Comp ositon   API    export   default   { install(vue)   { vue.prototype.$create   =   create } } 1 2 3 4 5  export   default   { install(app)   { app.config.globalProperties.$create   =   create } } 1 2 3 4 5
+
+【第 24 页】
+24  emit   _hub   o n-cancel   on-confirm   API _hub  //   Modal.vue setup(props,   ctx)   { let   instance   =   getCurrentInstance();   // onBeforeMount(()   =>   { instance._hub   =   { 'on-cancel':   ()   =>   {}, 'on-confirm':   ()   =>   {} }; }); const   handleConfirm   =   ()   =>   { ctx.emit('on-confirm'); instance._hub['on-confirm'](); }; const   handleCancel   =   ()   =>   { ctx.emit('on-cancel'); ctx.emit('update:modelValue',   false); instance._hub['on-cancel'](); }; return   { handleConfirm, handleCancel }; } 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25  app.config.globalProperties.$modal   =   { show({})   { /*   */ } } 1 2 3 4 5
+
+【第 25 页】
+25  //   index.ts app.config.globalProperties.$modal   =   { show({ /*   */ onConfirm, onCancel })   { /*   ...   */ const   {   props,   _hub   }   =   instance; const   _closeModal   =   ()   =>   { props.modelValue   =   false; container.parentNode!.removeChild(container); }; //   _hub Object.assign(_hub,   { async   'on-confirm'()   { if   (onConfirm)   { const   fn   =   onConfirm(); //   Promise if   (fn   &&   fn.then)   { try   { props.loading   =   true; await   fn; props.loading   =   false; _closeModal(); }   catch   (err)   { // console.error(err); props.loading   =   false; } }   else   { _closeModal(); } }   else   { _closeModal(); } }, 'on-cancel'()   { onCancel   &&   onCancel(); _closeModal(); } }); } 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45
+
+【第 26 页】
+26  typsScript Vue2   watcher property   setter   watcher        }; 46
+
+【第 27 页】
+27  diff Vue3  <template> <div   id="content"> <p   class="text">   </p> <p   class="text">   </p> <p   class="text">{{   message   }}</p> <p   class="text">   </p> ... <p   class="text">   </p> </div> </template> 1 2 3 4 5 6 7 8 9 10
+
+【第 28 页】
+28  vue3   diff   vue2 flag p   diff Vue3     export   const   enum   PatchFlags   { TEXT   =   1,// CLASS   =   1   <<   1,   //   2   class STYLE   =   1   <<   2,   //   4   style PROPS   =   1   <<   3,   //   8 FULL_PROPS   =   1   <<   4,   //   16   key   key   diff HYDRATE_EVENTS   =   1   <<   5,   //   32 STABLE_FRAGMENT   =   1   <<   6,   //   64   Fragment KEYED_FRAGMENT   =   1   <<   7,   //   128   key   Fragment UNKEYED_FRAGMENT   =   1   <<   8,   //   256   key   Fragment NEED_PATCH   =   1   <<   9,   //   512 DYNAMIC_SLOTS   =   1   <<   10,   //   solt HOISTED   =   -1,   //   diff BAIL   =   -2   // } 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+
+【第 29 页】
+29  _hoisted_1   render   _hoisted_1 _hoisted_1   PatchFlag    <span>   </span> <div>{{   message   }}</div> 1 2 3  export   function   render(_ctx,   _cache,   $props,   $setup,   $data,   $options) { return   (_openBlock(),   _createBlock(_Fragment,   null,   [ _createVNode("span",   null,   "   "), _createVNode("div",   null,   _toDisplayString(_ctx.message),   1   /*   TEXT   */) ],   64   /*   STABLE_FRAGMENT   */)) } 1 2 3 4 5 6  const   _hoisted_1   =   /*#__PURE__*/_createVNode("span",   null,   "   ",   -1   /*   H OISTED   */) export   function   render(_ctx,   _cache,   $props,   $setup,   $data,   $options)   { return   (_openBlock(),   _createBlock(_Fragment,   null,   [ _hoisted_1, _createVNode("div",   null,   _toDisplayString(_ctx.message),   1   /*   TEXT   */ ) ],   64   /*   STABLE_FRAGMENT   */)) } //   Check   the   console   for   the   AST 1 2 3 4 5 6 7 8 9 10
+
+【第 30 页】
+30  diff createStaticVNode node   innerHtml    <div> <button   @click   =   'onClick'>   </button> </div> 1 2 3  export   const   render   =   /*#__PURE__*/_withId(function   render(_ctx,   _cache,   $p rops,   $setup,   $data,   $options)   { return   (_openBlock(),   _createBlock("div",   null,   [ _createVNode("button",   {   onClick:   _ctx.onClick   },   "   ",   8   /*   PROPS   */ ,   ["onClick"]) //   PROPS=1<<3,//   8   // ])) }) 1 2 3 4 5 6  export   function   render(_ctx,   _cache,   $props,   $setup,   $data,   $options) { return   (_openBlock(),   _createBlock("div",   null,   [ _createVNode("button",   { onClick:   _cache[1]   ||   (_cache[1]   =   (...args)   =>   (_ctx.onClick(...args ))) },   "   ") ])) } 1 2 3 4 5 6 7

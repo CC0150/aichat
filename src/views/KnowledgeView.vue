@@ -3,10 +3,15 @@ import { ref, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import { parseFile } from '@/utils/docParser'
+import { reindexKB } from '@/utils/knowledgeApi'
+import { useToast } from '@/composables/useToast'
 import Modal from '@/components/Modal.vue'
 
 /** 知识库状态（列表、当前详情、文件等） */
 const store = useKnowledgeStore()
+
+/** toast 通知 */
+const { toast, toastType, showToast } = useToast()
 
 /** 当前视图模式：'list'（列表）或 'detail'（详情） */
 const viewMode = ref('list')
@@ -60,6 +65,23 @@ async function handleCreate() {
 function confirmDeleteKB(kb) {
   deleteTarget.value = kb
   showDeleteModal.value = true
+}
+
+const isReindexing = ref(false)
+/** 重新索引知识库 */
+async function handleReindex(kb) {
+  if (isReindexing.value) return
+  isReindexing.value = true
+  try {
+    const result = await reindexKB(kb.id)
+    const files = result.files ?? 0
+    const chunks = result.chunks ?? 0
+    showToast(`索引完成：${files} 个文件 → ${chunks} 个向量块`)
+  } catch (e) {
+    showToast('索引失败：' + (e.message || '未知错误'), 'error')
+  } finally {
+    isReindexing.value = false
+  }
 }
 
 /** 关闭删除确认弹窗 */
@@ -154,6 +176,18 @@ function formatFileSize(charCount) {
 
 <template>
   <div class="flex h-full flex-col bg-background">
+    <!-- Toast -->
+    <Transition name="fade">
+      <div
+        v-if="toast"
+        class="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium shadow-lg"
+        :class="toastType === 'error' ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'"
+      >
+        <Icon :icon="toastType === 'error' ? 'lucide:alert-circle' : 'lucide:check-circle'" class="h-4 w-4" />
+        {{ toast }}
+      </div>
+    </Transition>
+
     <div class="flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8 thin-scrollbar">
       <div class="mx-auto max-w-2xl">
         <!-- 列表视图 -->
@@ -241,6 +275,15 @@ function formatFileSize(charCount) {
                   </div>
                 </div>
                 <div class="flex shrink-0 items-center gap-0.5 sm:gap-1">
+                  <button
+                    type="button"
+                    class="rounded-lg p-2 text-text-muted transition-colors hover:bg-primary/10 hover:text-primary sm:p-1.5"
+                    title="重新索引（重新切块+向量化）"
+                    :disabled="isReindexing"
+                    @click.stop="handleReindex(kb)"
+                  >
+                    <Icon :icon="isReindexing ? 'lucide:loader-2' : 'lucide:refresh-cw'" :class="['h-4 w-4', isReindexing ? 'animate-spin' : '']" />
+                  </button>
                   <button
                     type="button"
                     class="rounded-lg p-2 text-text-muted transition-colors hover:bg-red-500/10 hover:text-red-500 sm:p-1.5"

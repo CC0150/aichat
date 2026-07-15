@@ -42,3 +42,16 @@ export async function generateFromKB(kbId, { questionCount, difficulty, model })
     body: { questionCount, difficulty, model },
   })
 }
+
+/** Agent 驱动出题（先搜知识库再出题） */
+export async function agentGenerateFromKB(kbId, { questionCount, difficulty, model }) {
+  return apiRequest(`${BASE}/${kbId}/agent-generate`, {
+    method: 'POST',
+    body: { questionCount, difficulty, model },
+  })
+}
+
+/** 重新索引知识库 */
+export async function reindexKB(kbId) {
+  return apiRequest(`${BASE}/${kbId}/reindex`, { method: 'POST' })
+}

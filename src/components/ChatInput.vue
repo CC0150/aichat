@@ -5,8 +5,10 @@ import { useRouter } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useInterviewStore } from '@/stores/interview'
+import { useKnowledgeStore } from '@/stores/knowledge'
 import { requestChatStream, autoResize as autoResizeTextarea, isAbortError } from '@/utils'
 import { buildMessagesWithContext, trimByTokenBudget } from '@/utils/messageBuilder'
+import { requestRagStream } from '@/utils/ragApi'
 import { difficultyMap } from '@/utils/interviewHelpers'
 import { parseFile } from '@/utils/docParser'
 import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
@@ -21,6 +23,8 @@ const chatStore = useChatStore()
 const appStore = useAppStore()
 /** 面试状态（历史记录列表等） */
 const interviewStore = useInterviewStore()
+/** 知识库状态（列表） */
+const knowledgeStore = useKnowledgeStore()
 /** 是否正在发送消息（本地状态） */
 const isSending = ref(false)
 /** 是否处于忙碌状态（发送中 或 重新生成中），用于控制发送/停止按钮 */
@@ -32,6 +36,14 @@ const textareaRef = ref(null)
 /** 模型选择下拉菜单是否打开 */
 const isModelMenuOpen = ref(false)
 
+// KB 选择器
+/** 是否开启了知识库搜索模式 */
+const isKBMode = ref(false)
+/** 当前选中的知识库 ID */
+const selectedKbId = ref(null)
+/** KB 选择下拉菜单是否打开 */
+const isKBMenuOpen = ref(false)
+
 // 面试记录引用
 /** 当前选中的面试记录 */
 const selectedInterview = ref(null)
@@ -42,6 +54,12 @@ const isInterviewMenuOpen = ref(false)
 const canSend = computed(() => !!input.value?.trim())
 /** 是否已附加面试记录 */
 const hasInterviewAttachment = computed(() => attachments.value.some((a) => a.type === 'interview'))
+/** 当前选中 KB 的标签 */
+const selectedKbLabel = computed(() => {
+  if (!selectedKbId.value) return '知识库'
+  const kb = knowledgeStore.kbs.find((k) => k.id === selectedKbId.value)
+  return kb ? kb.name : '知识库'
+})
 
 /** 文件选择 input DOM 引用 */
 const fileInputRef = ref(null)
@@ -482,6 +500,47 @@ async function sendMessage(content) {
   // 预先创建空的 assistant 消息占位，流式输出时逐 chunk 追加
   chatStore.addMessage('assistant', '')
 
+  // —— RAG 分支：选中知识库时走 /api/rag/search ——
+  if (selectedKbId.value) {
+    try {
+      if (controller.signal.aborted) return
+      const modelConfig = appStore.currentModel
+      const streamingChatId = chatStore.currentChatId
+
+      await requestRagStream({
+        query: text,
+        kbId: selectedKbId.value,
+        model: modelConfig.model,
+        onChunk: (chunk) => {
+          if (chatStore.currentChatId === streamingChatId) chatStore.appendToLastMessage(chunk)
+        },
+        onError: (msg) => {
+          if (chatStore.currentChatId === streamingChatId)
+            chatStore.setLastAssistantMessage(`Error: ${msg}`)
+        },
+        signal: controller.signal,
+      })
+    } catch (error) {
+      if (controller.signal.aborted || isAbortError(error)) {
+        const msgs = chatStore.currentMessages
+        const last = msgs[msgs.length - 1]
+        if (last && last.role === 'assistant' && !String(last.content || '').trim()) {
+          chatStore.setLastAssistantMessage('(Stopped)')
+        }
+      } else {
+        console.error('RAG API error:', error)
+        chatStore.setLastAssistantMessage(`Error: ${error.message}`)
+      }
+    } finally {
+      if (activeController === controller) activeController = null
+      isSending.value = false
+      clearAttachment()
+      clearImages()
+    }
+    return
+  }
+
+  // —— 普通发送分支 ——
   try {
     // buildMessagesWithContext 负责：裁剪历史消息、构建 system prompt（含附件内容）
     const { messages } = await buildMessagesWithContext({
@@ -553,6 +612,7 @@ function toggleRecording() {
 
 onMounted(() => {
   initSpeechRecognition()
+  knowledgeStore.fetchKBs() // 拉取知识库列表，供 KB 选择器使用
   // 页面关闭前中止进行中的请求，避免连接泄漏
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
@@ -845,6 +905,62 @@ defineExpose({ sendMessage, continueGeneration })
                   <span class="truncate">{{ m.label }}</span>
                   <Icon
                     v-if="m.id === appStore.currentModelId"
+                    icon="lucide:check"
+                    class="h-4 w-4 shrink-0 text-primary"
+                  />
+                </button>
+              </div>
+            </transition>
+          </div>
+
+          <!-- KB 搜索模式 -->
+          <div class="relative">
+            <button
+              v-tooltip="isKBMode ? `知识库搜索：${selectedKbLabel}` : '知识库搜索（基于上传的文档问答）'"
+              type="button"
+              class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-all duration-200"
+              :class="
+                isKBMode
+                  ? 'bg-primary/10 text-primary hover:bg-primary/15'
+                  : 'text-text-muted hover:bg-surface-input hover:text-text-primary'
+              "
+              @click="isKBMenuOpen = !isKBMenuOpen"
+            >
+              <Icon icon="lucide:database" class="h-[17px] w-[17px]" />
+              <span class="hidden sm:inline">{{ isKBMode ? selectedKbLabel : '知识库' }}</span>
+            </button>
+            <transition name="fade">
+              <div
+                v-if="isKBMenuOpen"
+                class="absolute right-0 bottom-full z-20 mb-1.5 w-56 rounded-xl border border-border bg-surface-elevated p-1 shadow-lg"
+              >
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[13px] text-text-secondary transition-colors duration-150 hover:bg-surface-input"
+                  @click="(selectedKbId = null), (isKBMode = false), (isKBMenuOpen = false)"
+                >
+                  <Icon icon="lucide:x" class="h-4 w-4 text-text-muted" />
+                  <span>关闭知识库搜索</span>
+                  <Icon v-if="!isKBMode" icon="lucide:check" class="h-4 w-4 ml-auto text-primary" />
+                </button>
+                <div
+                  v-if="knowledgeStore.kbs.length === 0"
+                  class="px-3 py-2 text-xs text-text-muted"
+                >
+                  暂无知识库，请先创建
+                </div>
+                <button
+                  v-for="kb in knowledgeStore.kbs"
+                  :key="kb.id"
+                  type="button"
+                  class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[13px] text-text-secondary transition-colors duration-150 hover:bg-surface-input"
+                  @click="(selectedKbId = kb.id), (isKBMode = true), (isKBMenuOpen = false)"
+                >
+                  <Icon icon="lucide:folder" class="h-4 w-4 shrink-0 text-text-muted" />
+                  <span class="truncate">{{ kb.name }}</span>
+                  <span class="ml-auto shrink-0 text-[11px] text-text-muted">{{ kb.fileCount }} 文件</span>
+                  <Icon
+                    v-if="kb.id === selectedKbId"
                     icon="lucide:check"
                     class="h-4 w-4 shrink-0 text-primary"
                   />

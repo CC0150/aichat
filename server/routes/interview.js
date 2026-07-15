@@ -163,4 +163,33 @@ router.post("/evaluate", async (req, res) => {
   }
 })
 
+/**
+ * POST /api/interview/agent-evaluate
+ * Agent 驱动评估（自动搜索知识库 + 评分 + 追问决策）
+ * body: { question, answerPoints, conversationHistory, kbId?, model? }
+ */
+router.post("/agent-evaluate", async (req, res) => {
+  const question = sanitizeString(req.body?.question, { maxLength: 2000 })
+  const answerPoints = req.body?.answerPoints
+  const conversationHistory = req.body?.conversationHistory || []
+  const kbId = sanitizeString(req.body?.kbId, { maxLength: 50, required: false }) || undefined
+  const model = sanitizeModel(sanitizeString(req.body?.model, { required: false }))
+
+  if (!question || !conversationHistory.length) {
+    return res.status(400).json({ error: "question 和 conversationHistory 为必填字段" })
+  }
+
+  try {
+    const { runInterviewEvaluate } = require("../services/agent")
+    const result = await runInterviewEvaluate({
+      question, answerPoints, conversationHistory, kbId, model,
+    })
+    res.json(result)
+  } catch (err) {
+    console.error("[interview/agent-evaluate] 失败:", err.message)
+    // 返回 500 让前端显示"重新点评"按钮
+    res.status(500).json({ error: err.message || "Agent 评估服务异常" })
+  }
+})
+
 module.exports = router

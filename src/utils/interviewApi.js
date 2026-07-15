@@ -2,6 +2,7 @@ import { apiRequest } from './apiClient'
 
 const SCORE_API_URL = '/api/interview/score'
 const EVALUATE_API_URL = '/api/interview/evaluate'
+const AGENT_EVALUATE_API_URL = '/api/interview/agent-evaluate'
 const QUESTIONS_API_URL = '/api/questions/generate'
 const ROLE_QUESTIONS_API_URL = '/api/questions/generate-by-role'
 
@@ -20,11 +21,17 @@ export async function requestScore({ question, answerPoints, userAnswer, model }
 
 /**
  * 深度面试评估接口（支持多轮追问）
- * @param {{ question: string, answerPoints: string[], conversationHistory: Array<{role:string, content:string}>, model?: string }} params
- * @returns {Promise<{ action: 'follow_up'|'complete', followUpQuestion?, scoreHint?, score?, correctness?, completeness?, clarity?, feedback?, improvedAnswer? }>}
  */
 export function requestEvaluate({ question, answerPoints, conversationHistory, model }) {
   return request(EVALUATE_API_URL, { question, answerPoints, conversationHistory, model })
+}
+
+/**
+ * Agent 驱动评估（自动搜索知识库 + 评分 + 追问）
+ * @param {{ question: string, answerPoints: string[], conversationHistory: Array, kbId?: string, model?: string }} params
+ */
+export function requestAgentEvaluate({ question, answerPoints, conversationHistory, kbId, model }) {
+  return request(AGENT_EVALUATE_API_URL, { question, answerPoints, conversationHistory, kbId, model })
 }
 
 /**

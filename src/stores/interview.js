@@ -16,6 +16,7 @@ export const useInterviewStore = defineStore(
     const isCustomMode = ref(false) // 是否为自定义题目模式（文件出题 / AI 生成）
     const customSource = ref('') // 自定义题目的来源描述（文件名等）
     const startedAt = ref(null) // 面试开始时间
+    const kbId = ref(null) // 知识库 ID（知识库出题时设置，用于 Agent 增强评估）
 
     // ===== 历史记录 =====
     const history = ref([]) // 每次完成的面试记录 [{ id, type, questions, answers, scores, startedAt, finishedAt, totalScore }]
@@ -313,6 +314,7 @@ export const useInterviewStore = defineStore(
       isCustomMode,
       customSource,
       startedAt,
+      kbId,
       history,
       currentQuestion,
       currentConversation,
