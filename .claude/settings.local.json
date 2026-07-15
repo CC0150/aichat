@@ -10,7 +10,8 @@
       "Bash(npx prettier:*)",
       "Bash(npm run *)",
       "WebSearch",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "Bash(node -e ' *)"
     ]
   }
 }

@@ -394,15 +394,11 @@ curl https://api.siliconflow.cn/v1/embeddings \
 
 ### 3.2 文本分块函数
 
-```js
-// server/services/chunker.js
+先看简化版理解核心逻辑，再看生产版增强。
 
-/**
- * 将长文本切分成固定大小的块，在句号/换行处切割
- * @param {string} text - 原始文本
- * @param {{ chunkSize?: number, overlap?: number }} opts
- * @returns {string[]}
- */
+**简化版（理解原理）**：
+
+```js
 function chunkText(text, { chunkSize = 500, overlap = 100 } = {}) {
   const chunks = []
   let start = 0
@@ -410,7 +406,6 @@ function chunkText(text, { chunkSize = 500, overlap = 100 } = {}) {
   while (start < text.length) {
     let end = Math.min(start + chunkSize, text.length)
 
-    // 不是最后一块时，尽量在句号或换行处切割
     if (end < text.length) {
       const slice = text.slice(start, end)
       const match = slice.match(/.*[。\n]/)   // 找最近的完整句
@@ -421,8 +416,78 @@ function chunkText(text, { chunkSize = 500, overlap = 100 } = {}) {
     if (chunk) chunks.push(chunk)
 
     start = end - overlap
-    // 防止 overlap 大于 chunkSize 导致死循环
-    if (start >= text.length - 1) break
+    if (start >= text.length - 1) break       // 防死循环
+  }
+
+  return chunks
+}
+```
+
+**逻辑就是**：从 0 开始取 500 字 → 往前找最近的句号 → 切下 → 后退 100 字 → 继续。
+
+**生产版（你项目实际用的，面试能展开讲）**：
+
+```js
+// server/services/chunker.js
+
+/**
+ * 滑动窗口 + 语义边界回退策略：
+ * 从当前位置取 chunkSize 个字符，往回找最近的语义断点（句号、换行等），
+ * 在断点处切割。相邻块之间保留 overlap 重叠。
+ *
+ * @param {string}  text
+ * @param {{ chunkSize?: number, overlap?: number }} opts
+ * @returns {string[]}
+ */
+function chunkText(text, { chunkSize = 512, overlap = 80 } = {}) {
+  if (typeof text !== 'string' || text.trim().length === 0) return []
+
+  // 归一化：合并多个连续空行
+  text = text.replace(/\n{3,}/g, '\n\n').trim()
+
+  // 短文本直接返回
+  if (text.length <= chunkSize) return [text]
+
+  // 断点优先级：句末标点 > 换行 > 分号 > 逗号
+  const BOUNDARY_RE = /[。！？\n.!?;；，,]/g
+
+  const chunks = []
+  let start = 0
+
+  while (start < text.length) {
+    let end = Math.min(start + chunkSize, text.length)
+
+    // 最后一段直接收尾
+    if (end >= text.length) {
+      const chunk = text.slice(start).trim()
+      if (chunk) chunks.push(chunk)
+      break
+    }
+
+    // 在窗口内找最后一个语义断点（最多退回 chunkSize 的 30%）
+    const searchStart = Math.max(start, end - Math.floor(chunkSize * 0.3))
+    const window = text.slice(searchStart, end)
+
+    // 找窗口内最后一个匹配的断点
+    let lastBoundary = -1
+    let match
+    BOUNDARY_RE.lastIndex = 0
+    while ((match = BOUNDARY_RE.exec(window)) !== null) {
+      lastBoundary = match.index
+    }
+
+    if (lastBoundary !== -1) {
+      end = searchStart + lastBoundary + 1   // 在断点后切割（包含标点）
+    }
+    // 找不到断点 → 硬切在 chunkSize，避免死循环
+
+    const chunk = text.slice(start, end).trim()
+    if (chunk) chunks.push(chunk)
+
+    const nextStart = end - overlap
+    if (nextStart <= start || nextStart >= text.length) break  // 防死循环
+
+    start = nextStart
   }
 
   return chunks
@@ -431,7 +496,13 @@ function chunkText(text, { chunkSize = 500, overlap = 100 } = {}) {
 module.exports = { chunkText }
 ```
 
-**逻辑就是**：从 0 开始取 500 字 → 往前找最近的句号 → 切下 → 后退 100 字 → 继续。
+**简化版 vs 生产版，多了三个面试能说的增强**：
+
+| 增强 | 做什么 | 为什么 |
+|------|--------|--------|
+| **30% 回退限制** | 只在窗口尾部 30% 范围内找断点 | 如果整段都没标点，不会一直退到 0 导致块太小 |
+| **找最后一个断点** | `exec` 遍历完取 `lastBoundary`，而非 `match()` 找第一个 | 尽量让每块接近 chunkSize，而不是一遇到标点就切 |
+| **死循环双重防护** | `nextStart <= start` + `nextStart >= text.length` | 防止 overlap 设得比 chunk 还大导致窗口倒退
 
 ---
 
@@ -441,16 +512,24 @@ module.exports = { chunkText }
 npm install @lancedb/lancedb
 ```
 
-**注意**：包名是 `@lancedb/lancedb`，不是 `vectordb`（已废弃）。
+**注意**：包名是 `@lancedb/lancedb`，不是 `vectordb`（已废弃）。`apache-arrow` 作为 LanceDB 的依赖会自动安装，不需要额外装。
 
 ```js
 // server/services/vectorStore.js
 const lancedb = require('@lancedb/lancedb')
+const arrow = require('apache-arrow')
 const path = require('path')
 
 const DB_PATH = path.join(__dirname, '..', 'data', 'vectors')
 
+// 单例缓存（避免每次请求重新连接）
 let db = null
+let table = null
+
+const TABLE_NAME = 'chunks'
+const VECTOR_DIM = 1024  // bge-large-zh-v1.5 输出维度
+
+// ===== 内部 =====
 
 async function getDB() {
   if (!db) db = await lancedb.connect(DB_PATH)
@@ -458,59 +537,103 @@ async function getDB() {
 }
 
 /**
+ * Arrow Schema —— 显式定义每列的名称和类型
+ * 这是标准写法，不需要「塞占位数据 → 推断 → 删占位行」那种 hack
+ */
+function getSchema() {
+  return new arrow.Schema([
+    new arrow.Field('vector', new arrow.FixedSizeList(VECTOR_DIM, new arrow.Field('item', new arrow.Float32()))),
+    new arrow.Field('text', new arrow.Utf8()),
+    new arrow.Field('id', new arrow.Utf8()),
+    new arrow.Field('kbId', new arrow.Utf8()),
+    new arrow.Field('fileId', new arrow.Utf8()),
+  ])
+}
+
+// ===== 公开 API =====
+
+/**
  * 初始化或获取 chunks 表
+ * 首次调用用 Arrow schema 创建空表，后续直接打开
  */
 async function getTable() {
-  const database = await getDB()
-  const tableNames = await database.tableNames()
+  if (table) return table
 
-  if (!tableNames.includes('chunks')) {
-    // 首次创建表，需要有一条初始数据定义 schema
-    return database.createTable('chunks', [{
-      vector: new Array(1024).fill(0),
-      text: '',
-      id: '_init_',
-      kbId: '_init_'
-    }])
+  const database = await getDB()
+  const names = await database.tableNames()
+
+  if (!names.includes(TABLE_NAME)) {
+    table = await database.createEmptyTable(TABLE_NAME, getSchema())
+  } else {
+    table = await database.openTable(TABLE_NAME)
   }
 
-  return database.openTable('chunks')
+  return table
 }
 
 /**
  * 批量存入向量
- * @param {Array<{ vector: number[], text: string, id: string, kbId: string }>} rows
+ * @param {Array<{ vector: number[], text: string, id: string, kbId: string, fileId: string }>} rows
  */
 async function addChunks(rows) {
-  const table = await getTable()
-  await table.add(rows)
+  if (!rows || rows.length === 0) return
+  const t = await getTable()
+  await t.add(rows)
 }
 
 /**
  * 检索最相似的 K 个块
  * @param {number[]} queryVector - 查询向量
- * @param {{ kbId?: string, limit?: number }} opts
- * @returns {Promise<Array<{ text: string, id: string, _distance: number }>>}
+ * @param {{ kbId?: string, fileId?: string, limit?: number }} opts
+ * @returns {Promise<Array<{ text: string, id: string, kbId: string, _distance: number }>>}
  */
-async function search(queryVector, { kbId, limit = 5 } = {}) {
-  const table = await getTable()
-  let query = table.search(queryVector).limit(limit)
-  if (kbId) query = query.where(`kbId = "${kbId}"`)  // 只在指定知识库内搜索
-  return query.execute()
+async function search(queryVector, { kbId, fileId, limit = 5 } = {}) {
+  const t = await getTable()
+  let query = t.search(queryVector).limit(limit)
+  // kbId / fileId 由服务端生成（UUID），不存在注入风险
+  if (kbId) query = query.where(`kbId = "${kbId}"`)
+  if (fileId) query = query.where(`fileId = "${fileId}"`)
+  return query.toArray()
 }
 
 /**
  * 删除指定知识库的所有向量
  */
 async function deleteByKB(kbId) {
-  const table = await getTable()
-  await table.delete(`kbId = "${kbId}"`)
+  const t = await getTable()
+  await t.delete(`kbId = "${kbId}"`)
 }
 
-module.exports = { getTable, addChunks, search, deleteByKB }
+/**
+ * 删除指定文件的所有向量
+ */
+async function deleteByFile(fileId) {
+  const t = await getTable()
+  await t.delete(`fileId = "${fileId}"`)
+}
+
+/**
+ * 获取 chunk 总数
+ */
+async function count() {
+  const t = await getTable()
+  return t.countRows()
+}
+
+module.exports = { getTable, addChunks, search, deleteByKB, deleteByFile, count }
 ```
 
-**4 个 API 就是**：`connect` → `createTable`/`openTable` → `add` → `search`。没有第七个。
+**6 个方法就是**：`connect` → `createEmptyTable`/`openTable` → `add` → `search` → `delete` → `countRows`。没有更多了。
+
+| 方法 | 一句话 |
+|------|--------|
+| `connect` | 连接/创建数据库（目录不存在自动建） |
+| `createEmptyTable` + Arrow Schema | **标准建表方式**，不需要占位行 hack |
+| `openTable` | 打开已有表 |
+| `add` | 批量插入行 |
+| `search + where + toArray` | 向量检索 + 过滤 → JS 数组 |
+| `delete` | 按条件删除行 |
+| `countRows` | 行数统计 |
 
 ---
 
@@ -518,7 +641,9 @@ module.exports = { getTable, addChunks, search, deleteByKB }
 
 ```js
 // server/services/rag.js
-const { embed } = require('./embedding')
+// 注意：import 名称必须跟你 embedding.js 实际导出的函数名一致
+// 文档 §3.1 示例叫 embed，但你项目的 embedding.js 导出的是 getEmbedding
+const { getEmbedding } = require('./embedding')
 const { search } = require('./vectorStore')
 const { streamChat } = require('./deepseek')
 
@@ -530,7 +655,7 @@ const { streamChat } = require('./deepseek')
  */
 async function* ragQuery(userQuery, { kbId, model = 'deepseek-v4-pro' } = {}) {
   // Step 1: 把问题变成向量
-  const [queryVector] = await embed([userQuery])
+  const [queryVector] = await getEmbedding([userQuery])
 
   // Step 2: 向量检索
   const chunks = await search(queryVector, { kbId, limit: 5 })
@@ -562,6 +687,46 @@ ${context}
 module.exports = { ragQuery }
 ```
 
+**接入 Express 路由（胶水代码）**：
+
+```js
+// server/routes/rag.js  （新建）
+const express = require('express')
+const router = express.Router()
+const { writeSSEHeaders } = require('../middleware')
+const { ragQuery } = require('../services/rag')
+
+router.post('/search', async (req, res) => {
+  const { query, kbId } = req.body
+  if (!query || !query.trim()) {
+    return res.status(400).json({ error: 'query 不能为空' })
+  }
+
+  writeSSEHeaders(res)
+
+  try {
+    for await (const chunk of ragQuery(query, { kbId })) {
+      res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`)
+    }
+    res.write('data: [DONE]\n\n')
+    res.end()
+  } catch (err) {
+    res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`)
+    res.end()
+  }
+})
+
+module.exports = router
+```
+
+然后在 `server/routes/index.js` 中挂载：
+
+```js
+app.use('/api/rag', require('./rag'))
+```
+
+这样 `ragQuery` 就能被前端调用了：`POST /api/rag/search`，SSE 流式返回。
+
 ---
 
 ### 3.5 Agent 实现（Vercel AI SDK）
@@ -570,7 +735,17 @@ module.exports = { ragQuery }
 npm install ai @ai-sdk/openai zod
 ```
 
-**注意**：Vercel AI SDK 是 ESM 包，你的项目是 CommonJS。在 `server/` 里需要用动态 `import()`。或者把 Agent 相关的新文件写成 `.mjs`。
+**注意**：Vercel AI SDK 是 ESM 包，你的项目是 CommonJS。处理策略：
+
+| 方案 | 做法 | 适合 |
+|------|------|------|
+| 动态 `import()`（推荐） | 在函数内部 `await import(...)` | Agent 文件少、在路由里引用 |
+| `.mjs` 文件 | Agent 文件用 `.mjs` 后缀 | Agent 代码独立、不被 CJS 文件 require |
+| 全局改 ESM | `package.json` 加 `"type": "module"` | 一劳永逸，但改动大 |
+
+**本项目推荐**：Agent 核心文件用 `.mjs`（`server/services/agent.mjs`），路由里用动态 `import()` 引入。其他文件保持 CJS 不动。
+
+另外注意：`import()` 有**模块缓存**——同一个模块多次 `import()` 只会加载一次，不用担心每次都重新加载。但把 `import` 放在 `execute` 内部可读性差，更好的做法是提到文件顶部用动态 import 并缓存引用。
 
 ```js
 // server/services/agent.mjs
@@ -585,14 +760,24 @@ const deepseek = createOpenAI({
 
 // ===== 定义工具 =====
 
+// 顶层缓存引用（避免每次调工具都执行 import，虽然 import() 有缓存但可读性更好）
+let _embed, _search, _callAI
+async function getServices() {
+  if (!_embed) {
+    ;({ getEmbedding: _embed } = await import('../services/embedding.js'))
+    ;({ search: _search } = await import('../services/vectorStore.js'))
+    ;({ callAI: _callAI } = await import('../services/aiCompletions.js'))
+  }
+  return { embed: _embed, search: _search, callAI: _callAI }
+}
+
 const searchKnowledgeBase = tool({
   description: '从知识库中搜索相关文档内容。当需要查找特定技术知识、面试题素材时使用。',
   parameters: z.object({
     query: z.string().describe('搜索关键词或问题')
   }),
   execute: async ({ query }) => {
-    const { embed } = await import('../services/embedding.js')  // 复用你的 embedding
-    const { search } = await import('../services/vectorStore.js')
+    const { embed, search } = await getServices()
     const [qv] = await embed([query])
     const chunks = await search(qv, { limit: 5 })
     return chunks.map(c => c.text).join('\n\n')
@@ -606,7 +791,7 @@ const generateInterviewQuestion = tool({
     difficulty: z.enum(['easy', 'medium', 'hard']).describe('难度级别')
   }),
   execute: async ({ topic, difficulty }) => {
-    const { callAI } = await import('../services/aiCompletions.js')
+    const { callAI } = await getServices()
     return callAI({
       model: 'deepseek-v4-flash',
       prompt: `生成一道关于${topic}的${difficulty}难度前端面试题。
@@ -625,7 +810,7 @@ const gradeAnswer = tool({
     referencePoints: z.array(z.string()).describe('参考答案要点')
   }),
   execute: async ({ question, answer, referencePoints }) => {
-    const { callAI } = await import('../services/aiCompletions.js')
+    const { callAI } = await getServices()
     return callAI({
       model: 'deepseek-v4-flash',
       prompt: `题目：${question}\n参考答案：${referencePoints.join('；')}\n用户回答：${answer}\n请评分(1-10)并给出简短反馈。返回JSON：{"score":数字,"feedback":"反馈"}`,
@@ -702,12 +887,14 @@ export { runAgent, runAgentStream }
 // 在 writeFileContent() 调用之后插入：
 
 const { chunkText } = require('../services/chunker')
-const { embed } = require('../services/embedding')
+const { getEmbedding } = require('../services/embedding')
 const { addChunks } = require('../services/vectorStore')
 
 // 分块 + Embedding + 存入向量库
+// 注意：chunkSize/overlap 与 chunker.js 默认值（512/80）不同，
+// 知识库场景推荐 500/100（20% 重叠），中文 embedding 模型在这个粒度效果最好
 const chunks = chunkText(content, { chunkSize: 500, overlap: 100 })
-const vectors = await embed(chunks)
+const vectors = await getEmbedding(chunks)
 await addChunks(chunks.map((text, i) => ({
   vector: vectors[i],
   text,
@@ -715,6 +902,28 @@ await addChunks(chunks.map((text, i) => ({
   kbId: id
 })))
 ```
+
+**文件删除时同步清理向量**：
+
+在 `DELETE /api/knowledge/:id/files/:fileId` 里，删除文件后要同步删向量，否则向量库会残留脏数据：
+
+```js
+// 在 knowledge.js 删除文件路由中，unlink 之后插入：
+const { deleteByKB } = require('../services/vectorStore')
+
+// 方案 A：删除整个知识库时调（已有接口）
+await deleteByKB(kbId)
+
+// 方案 B：删除单个文件时，需要新增按 fileId 删除的方法
+// 在 vectorStore.js 中加：
+async function deleteByFileId(fileId) {
+  const table = await getTable()
+  await table.delete(`id LIKE "chunk-${fileId}-%"`)
+}
+await deleteByFileId(fileId)
+```
+
+> **为什么不能只删文件不删向量？** 向量库和文件系统是两份独立数据。文件删了但向量还在 → 用户搜索时会召回到"幽灵文档"（向量说匹配但原文已经不存在了）。
 
 ---
 
@@ -763,7 +972,7 @@ await addChunks(chunks.map((text, i) => ({
 
 下午（3h）：分块 + 向量库 + 全链路
   1. 手写 chunkText()（0.5h）
-  2. 装 @lancedb/lancedb，跑通 createTable → add → search（1h）
+  2. 装 @lancedb/lancedb，跑通 createEmptyTable → add → search（1h）
   3. 写 rag.js，串联 embed + search + streamChat（1h）
   4. 用一个测试 txt 文件验证整个链路（0.5h）
 ```
