@@ -6,6 +6,9 @@ const { callAI } = require("../services/aiCompletions")
 const { handleAIError } = require("../services/errorHandler")
 const { DIFFICULTY_MAP } = require("../utils/constants")
 const { sanitizeString, validateEnum, clampNumber } = require("../utils/validate")
+const { chunkText } = require("../services/chunker")
+const { getEmbedding } = require("../services/embedding")
+const { addChunks, deleteByKB, deleteByFile } = require("../services/vectorStore")
 
 const router = Router()
 
@@ -128,6 +131,9 @@ router.delete("/:id", async (req, res) => {
   const { id } = req.params
   try {
     await deleteKBDir(id)
+    deleteByKB(id).catch((err) =>
+      console.error(`[knowledge] 清理向量失败 ${id}:`, err.message)
+    )
     const list = (await readIndex()).filter((kb) => kb.id !== id)
     await writeIndex(list)
     res.json({ success: true })
@@ -178,6 +184,27 @@ router.post("/:id/files", async (req, res) => {
     meta.files.push(fileRecord)
     await writeMeta(id, meta)
 
+    // RAG 入库：切块 → embedding → 存向量库（异步，不阻塞接口响应）
+    setImmediate(async () => {
+      try {
+        const chunks = chunkText(content, { chunkSize: 500, overlap: 100 })
+        if (chunks.length === 0) return
+        const vectors = await getEmbedding(chunks)
+        await addChunks(
+          chunks.map((text, i) => ({
+            vector: vectors[i],
+            text,
+            id: `chunk-${fileId}-${i}`,
+            kbId: id,
+            fileId,
+          }))
+        )
+        console.log(`[knowledge] RAG 入库完成: ${fileId} → ${chunks.length} 个 chunk`)
+      } catch (err) {
+        console.error(`[knowledge] RAG 入库失败 ${fileId}:`, err.message)
+      }
+    })
+
     const list = await readIndex()
     const idx = list.findIndex((kb) => kb.id === id)
     if (idx !== -1) {
@@ -203,6 +230,11 @@ router.delete("/:id/files/:fileId", async (req, res) => {
     meta.files = meta.files.filter((f) => f.id !== fileId)
     await writeMeta(id, meta)
     await deleteFileContent(id, fileId)
+
+    // 同步清理向量库
+    deleteByFile(fileId).catch((err) =>
+      console.error(`[knowledge] 清理向量失败 ${fileId}:`, err.message)
+    )
 
     const list = await readIndex()
     const idx = list.findIndex((kb) => kb.id === id)
