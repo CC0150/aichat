@@ -916,7 +916,9 @@ defineExpose({ sendMessage, continueGeneration })
           <!-- KB 搜索模式 -->
           <div class="relative">
             <button
-              v-tooltip="isKBMode ? `知识库搜索：${selectedKbLabel}` : '知识库搜索（基于上传的文档问答）'"
+              v-tooltip="
+                isKBMode ? `知识库搜索：${selectedKbLabel}` : '知识库搜索（基于上传的文档问答）'
+              "
               type="button"
               class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-all duration-200"
               :class="
@@ -937,7 +939,7 @@ defineExpose({ sendMessage, continueGeneration })
                 <button
                   type="button"
                   class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[13px] text-text-secondary transition-colors duration-150 hover:bg-surface-input"
-                  @click="(selectedKbId = null), (isKBMode = false), (isKBMenuOpen = false)"
+                  @click="((selectedKbId = null), (isKBMode = false), (isKBMenuOpen = false))"
                 >
                   <Icon icon="lucide:x" class="h-4 w-4 text-text-muted" />
                   <span>关闭知识库搜索</span>
@@ -954,11 +956,13 @@ defineExpose({ sendMessage, continueGeneration })
                   :key="kb.id"
                   type="button"
                   class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[13px] text-text-secondary transition-colors duration-150 hover:bg-surface-input"
-                  @click="(selectedKbId = kb.id), (isKBMode = true), (isKBMenuOpen = false)"
+                  @click="((selectedKbId = kb.id), (isKBMode = true), (isKBMenuOpen = false))"
                 >
                   <Icon icon="lucide:folder" class="h-4 w-4 shrink-0 text-text-muted" />
                   <span class="truncate">{{ kb.name }}</span>
-                  <span class="ml-auto shrink-0 text-[11px] text-text-muted">{{ kb.fileCount }} 文件</span>
+                  <span class="ml-auto shrink-0 text-[11px] text-text-muted"
+                    >{{ kb.fileCount }} 文件</span
+                  >
                   <Icon
                     v-if="kb.id === selectedKbId"
                     icon="lucide:check"

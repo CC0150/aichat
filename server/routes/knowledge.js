@@ -144,6 +144,38 @@ router.delete("/:id", async (req, res) => {
   }
 })
 
+/** PATCH /api/knowledge/:id — 更新知识库名称与描述 */
+router.patch("/:id", async (req, res) => {
+  const { id } = req.params
+  const name = sanitizeString(req.body?.name, { maxLength: 100 })
+  const description = sanitizeString(req.body?.description, { maxLength: 500, required: false }) || ""
+
+  if (!name) return res.status(400).json({ error: "知识库名称不能为空" })
+
+  try {
+    const meta = await readMeta(id)
+    if (!meta) return res.status(404).json({ error: "知识库不存在" })
+
+    meta.name = name
+    meta.description = description
+    await writeMeta(id, meta)
+
+    // 同步更新 index 列表
+    const list = await readIndex()
+    const idx = list.findIndex((kb) => kb.id === id)
+    if (idx !== -1) {
+      list[idx].name = name
+      list[idx].description = description
+      await writeIndex(list)
+    }
+
+    res.json({ id, name, description })
+  } catch (err) {
+    console.error("[knowledge] 更新失败:", err.message)
+    res.status(500).json({ error: "更新知识库失败" })
+  }
+})
+
 /** GET /api/knowledge/:id — 获取知识库详情 */
 router.get("/:id", async (req, res) => {
   const { id } = req.params
@@ -370,11 +402,9 @@ router.post("/:id/agent-generate", async (req, res) => {
 router.post("/:id/reindex", async (req, res) => {
   const { id } = req.params
   try {
-    const meta = await readMeta(id)
-    if (!meta) return res.status(404).json({ error: "知识库不存在" })
-
     const { reindexKB } = require("../services/agent")
     const result = await reindexKB(id)
+    if (result.error) return res.status(404).json(result)
     res.json(result)
   } catch (err) {
     console.error("[knowledge] 重新索引失败:", err.message)

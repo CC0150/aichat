@@ -4,6 +4,7 @@ import {
   fetchKnowledgeBases,
   createKnowledgeBase,
   deleteKnowledgeBase,
+  updateKnowledgeBase,
   fetchKnowledgeBase,
   uploadFileToKB,
   deleteFileFromKB,
@@ -128,6 +129,31 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     }
   }
 
+  /** 更新知识库名称与描述 */
+  async function updateKB(id, { name, description }) {
+    loading.value = true
+    error.value = ''
+    try {
+      await updateKnowledgeBase(id, { name, description })
+      // 更新列表中的条目
+      const listIdx = kbs.value.findIndex((k) => k.id === id)
+      if (listIdx !== -1) {
+        kbs.value[listIdx].name = name
+        kbs.value[listIdx].description = description
+      }
+      // 更新当前详情
+      if (currentKB.value?.id === id) {
+        currentKB.value.name = name
+        currentKB.value.description = description
+      }
+    } catch (err) {
+      error.value = err.message || '更新失败'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   /** 基于知识库生成面试题 */
   async function generateQuestions(kbId, { questionCount = 5, difficulty = 'all', model }) {
     loading.value = true
@@ -159,6 +185,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     uploadFile,
     deleteFile,
     generateQuestions,
+    updateKB,
     clearCurrent,
   }
 })

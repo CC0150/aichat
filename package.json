@@ -19,7 +19,6 @@
     "highlight.js": "^11.9.0",
     "mammoth": "^1.11.0",
     "markdown-it": "^14.0.0",
-    "node-fetch": "^3.3.2",
     "pdfjs-dist": "^5.5.207",
     "pinia": "^2.1.7",
     "pinia-plugin-persistedstate": "^3.2.1",

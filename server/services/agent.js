@@ -5,6 +5,17 @@
  */
 
 const { agentLoop } = require('../utils/agentLoop')
+const { repairJson } = require('../utils/parseJson')
+
+/** 安全解析 AI 返回的 JSON，失败时尝试修复 */
+function safeParseJson(text, logTag) {
+  try {
+    return JSON.parse(text)
+  } catch (firstErr) {
+    console.warn(`[${logTag}] JSON 解析失败，尝试修复...`)
+    return JSON.parse(repairJson(text))
+  }
+}
 
 // ===== 工具定义 =====
 
@@ -59,16 +70,25 @@ const tools = [
 
 // ===== 工具执行 =====
 
+/**
+ * 搜索知识库（executeTool 和 qExecuteTool 共用）
+ * @param {string} query - 搜索关键词
+ * @param {{ kbId?: string, limit?: number }} opts
+ */
+async function searchKB(query, { kbId, limit = 5 } = {}) {
+  const { getEmbedding } = require('./embedding')
+  const { search } = require('./vectorStore')
+  const [qv] = await getEmbedding([query || ''])
+  const chunks = await search(qv, { kbId, limit })
+  if (!chunks.length) return '知识库中未找到相关内容。'
+  return chunks.map((c, i) => `[资料${i + 1}] ${c.text}`).join('\n\n')
+}
+
 async function executeTool(name, args) {
   switch (name) {
-    case 'searchKnowledgeBase': {
-      const { getEmbedding } = require('./embedding')
-      const { search } = require('./vectorStore')
-      const [qv] = await getEmbedding([args.query || ''])
-      const chunks = await search(qv, { limit: 5 })
-      if (!chunks.length) return '知识库中未找到相关内容。'
-      return chunks.map((c, i) => `[资料${i + 1}] ${c.text}`).join('\n\n')
-    }
+    case 'searchKnowledgeBase':
+      return searchKB(args.query, { limit: 5 })
+
     case 'gradeAnswer': {
       const { callAI } = require('./aiCompletions')
       const result = await callAI({
@@ -83,7 +103,7 @@ async function executeTool(name, args) {
 
 请评分（1-10 分）并给出简短反馈。返回 JSON：{"score":数字,"feedback":"评价"}`,
         temperature: 0.3,
-        maxTokens: 300,
+        maxTokens: 800,
         logTag: 'agent/grade',
       })
       return typeof result === 'object' ? JSON.stringify(result) : String(result)
@@ -101,7 +121,7 @@ async function executeTool(name, args) {
 要求：题目有区分度，包含参考答案要点。
 返回 JSON：{"question":"题目","answerPoints":["要点1","要点2","要点3"]}`,
         temperature: 0.7,
-        maxTokens: 500,
+        maxTokens: 800,
         logTag: 'agent/generate-question',
       })
       return typeof result === 'object' ? JSON.stringify(result) : String(result)
@@ -182,7 +202,7 @@ ${historyText}
   }
 
   try {
-    const parsed = JSON.parse(jsonMatch[0])
+    const parsed = safeParseJson(jsonMatch[0], 'interview/evaluate')
     if (parsed.action === 'follow_up') {
       return { action: 'follow_up', followUpQuestion: parsed.followUpQuestion || '请进一步说明。', scoreHint: parsed.scoreHint ?? 5, agentSteps: steps }
     }
@@ -198,8 +218,6 @@ ${historyText}
     return { action: 'complete', score: 5, correctness: 5, completeness: 5, clarity: 5, feedback: '评分解析异常', improvedAnswer: '', agentSteps: steps }
   }
 }
-
-module.exports = { runInterviewEvaluate, agentGenerateQuestions, reindexKB }
 
 /**
  * Agent 驱动的知识库出题
@@ -223,12 +241,7 @@ async function agentGenerateQuestions({ kbId, count = 5, difficulty = 'medium', 
 
   async function qExecuteTool(name, args) {
     if (name === 'searchKnowledgeBase') {
-      const { getEmbedding } = require('./embedding')
-      const { search } = require('./vectorStore')
-      const [qv] = await getEmbedding([args.query || ''])
-      const chunks = await search(qv, { kbId, limit: 10 })
-      if (!chunks.length) return '知识库中暂无内容'
-      return chunks.map((c, i) => `[资料${i + 1}] ${c.text}`).join('\n\n')
+      return searchKB(args.query, { kbId, limit: 10 })
     }
     return '未知工具'
   }
@@ -255,7 +268,7 @@ async function agentGenerateQuestions({ kbId, count = 5, difficulty = 'medium', 
   if (!jsonMatch) return { questions: [], error: 'Agent 题目生成失败' }
 
   try {
-    const questions = JSON.parse(jsonMatch[0])
+    const questions = safeParseJson(jsonMatch[0], 'agent/generate-questions')
     if (!Array.isArray(questions)) return { questions: [], error: '生成结果格式异常' }
     return {
       questions: questions.map((q, i) => ({
@@ -315,3 +328,5 @@ async function reindexKB(kbId) {
 
   return { success: true, files: files.length, chunks: totalChunks }
 }
+
+module.exports = { runInterviewEvaluate, agentGenerateQuestions, reindexKB }

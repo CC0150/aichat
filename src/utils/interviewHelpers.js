@@ -23,14 +23,41 @@ export function getScoreBgSolid(score) {
   return 'bg-red-500'
 }
 
-export function getScoreBorder(score) {
-  if (score >= 8) return 'border-emerald-500/20'
-  if (score >= 5) return 'border-amber-500/20'
-  return 'border-red-500/20'
-}
-
 export function getScoreLabel(score) {
   if (score >= 8) return '优秀'
   if (score >= 5) return '良好'
   return '需提升'
+}
+
+/**
+ * 计算单条面试记录的分类平均分
+ * @param {{ questions: Array, scores: Object }} record
+ * @returns {{ [category: string]: number }}
+ */
+export function getCategoryStats(record) {
+  const map = {}
+  for (const q of record.questions || []) {
+    const s = record.scores[q.id]
+    if (!s) continue
+    if (!map[q.category]) map[q.category] = { total: 0, count: 0 }
+    map[q.category].total += s.score || 0
+    map[q.category].count += 1
+  }
+  const result = {}
+  for (const [cat, stat] of Object.entries(map)) {
+    result[cat] = Math.round((stat.total / stat.count) * 10) / 10
+  }
+  return result
+}
+
+/**
+ * 获取单条记录的薄弱分类（得分 < 5）
+ * @returns {Array<{ knowledgePoint: string, score: number }>}
+ */
+export function getRecordWeakPoints(record) {
+  const catStats = getCategoryStats(record)
+  return Object.entries(catStats)
+    .filter(([, s]) => s < 5)
+    .map(([cat, s]) => ({ knowledgePoint: cat, score: s }))
+    .sort((a, b) => a.score - b.score)
 }

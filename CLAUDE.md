@@ -70,9 +70,10 @@ Server routes registered in `server/routes/index.js`:
 | Mount | File | Purpose |
 |-------|------|---------|
 | `/api/chat` | `chat.js` | SSE streaming chat |
-| `/api/interview` | `interview.js` | AI scoring + deep evaluation |
+| `/api/interview` | `interview.js` | AI scoring + deep evaluation + Agent-driven evaluation |
 | `/api/questions` | `questions.js` | AI question generation (from file content or target role) |
-| `/api/knowledge` | `knowledge.js` | Knowledge base CRUD + KB-based question generation |
+| `/api/knowledge` | `knowledge.js` | Knowledge base CRUD + file upload + KB-based question generation + Agent-driven question generation + reindex |
+| `/api/rag` | `rag.js` | SSE streaming RAG search against knowledge base vectors |
 | `/health` | `health.js` | Health check |
 
 ### Server middleware (`server/middleware/index.js`)
@@ -93,8 +94,13 @@ Also exports `writeSSEHeaders(res)` — writes SSE response headers (`text/event
 | `deepseek.js` | `streamChat(model, messages)` — async generator that yields content chunks from OpenAI SDK streaming |
 | `aiCompletions.js` | `callAI()` — non-streaming `openai.chat.completions.create` → `extractJson` → `JSON.parse` pipeline |
 | `errorHandler.js` | `handleAIError()` — centralized AI error classification and sanitized error response |
+| `agent.js` | `runInterviewEvaluate()` — Agent-driven interview evaluation (tool-use loop); `agentGenerateQuestions()` — Agent-driven KB question generation; `reindexKB()` — re-chunk + re-embed all files in a KB |
+| `chunker.js` | `chunkText(text, { chunkSize, overlap })` — sliding-window text chunking on semantic boundaries (sentence-ending punctuation, newlines) |
+| `embedding.js` | `getEmbedding(input)` — OpenAI-compatible embeddings API call (supports single string or batch array) |
+| `vectorStore.js` | LanceDB vector storage: `addChunks()`, `search()`, `deleteByKB()`, `deleteByFile()`, `count()` |
+| `rag.js` | `ragQuery(userQuery, { kbId, model, topK })` — async generator: embed → search → assemble context → streamChat |
 
-All server AI calls flow through one of these two files: `deepseek.js` for SSE streaming, `aiCompletions.js` for JSON responses.
+All server AI calls flow through one of three paths: `deepseek.js` for SSE streaming, `aiCompletions.js` for JSON responses, `agent.js` for tool-use agent loops.
 
 ### Server utilities (`server/utils/`)
 
@@ -103,6 +109,8 @@ All server AI calls flow through one of these two files: `deepseek.js` for SSE s
 | `parseJson.js` | `extractJson(raw)` — strips markdown fences, finds first valid `{}` or `[]` block |
 | `validate.js` | `sanitizeString`, `clampNumber`, `validateEnum` — input sanitization for all routes |
 | `constants.js` | `DIFFICULTY_MAP` — shared difficulty labels |
+| `agentLoop.js` | `agentLoop({ tools, executeTool, model, system, messages, maxSteps })` — generic LLM + tool-call loop: call LLM → execute tools → feed results back → repeat until text response or maxSteps |
+| `normalizeText.js` | `normalizeText(text)` — cleans PDF parse artifacts (control chars, CJK inter-character spaces, page markers) |
 
 ### Frontend shared utilities (`src/utils/`)
 
@@ -110,9 +118,11 @@ All server AI calls flow through one of these two files: `deepseek.js` for SSE s
 |------|---------|
 | `apiClient.js` | `apiRequest(url, options)` — unified fetch wrapper with network error handling and JSON parsing. Used by both `interviewApi.js` and `knowledgeApi.js` |
 | `chatApi.js` | `requestChatStream()` — SSE streaming via fetch + ReadableStream. Also re-exports `isAbortError` |
-| `interviewApi.js` | `requestScore()`, `requestEvaluate()`, `requestGenerateQuestions()`, `requestGenerateQuestionsByRole()` — typed wrappers over `apiClient` for all interview endpoints |
-| `knowledgeApi.js` | `fetchKnowledgeBases()`, `createKnowledgeBase()`, `deleteKnowledgeBase()`, `fetchKnowledgeBase()`, `uploadFileToKB()`, `deleteFileFromKB()`, `generateFromKB()` — typed wrappers for all KB CRUD endpoints |
-| `interviewHelpers.js` | `getScoreColor`, `getScoreBg`, `getScoreBgSolid`, `getScoreBorder`, `getScoreLabel`, `difficultyMap`, `difficultyColor` — shared score/difficulty display helpers |
+| `interviewApi.js` | `requestScore()`, `requestEvaluate()`, `requestAgentEvaluate()`, `requestGenerateQuestions()`, `requestGenerateQuestionsByRole()` — typed wrappers over `apiClient` for all interview endpoints |
+| `knowledgeApi.js` | `fetchKnowledgeBases()`, `createKnowledgeBase()`, `deleteKnowledgeBase()`, `updateKnowledgeBase()`, `fetchKnowledgeBase()`, `uploadFileToKB()`, `deleteFileFromKB()`, `generateFromKB()`, `agentGenerateFromKB()`, `reindexKB()` — typed wrappers for all KB CRUD + Agent + reindex endpoints |
+| `interviewHelpers.js` | `getScoreColor`, `getScoreBg`, `getScoreBgSolid`, `getScoreLabel`, `getCategoryStats()`, `getRecordWeakPoints()`, `difficultyMap`, `difficultyColor` — shared score/difficulty display helpers and per-record stat computation |
+| `sseClient.js` | `requestSSEStream(url, body, { onChunk, onError, signal })` — generic SSE stream reader, extracted from chatApi for RAG and Agent reuse |
+| `ragApi.js` | `requestRagStream({ query, kbId, model, onChunk, onError, signal })` — thin wrapper over SSE client for RAG search |
 | `interviewExport.js` | `exportRecords(records, format)` — exports interview records to Markdown/plain text/JSON, triggers browser download |
 | `tokenCounter.js` | `estimateTokens(text)`, `estimateMessagesTokens(messages)` — CJK/English aware token counting (~0.6 vs ~0.25 tokens/char) |
 | `modelConfig.js` | Model definitions (all DeepSeek, none support vision) |
@@ -127,23 +137,44 @@ All server AI calls flow through one of these two files: `deepseek.js` for SSE s
 |-------|----------|
 | `app` | Theme, sidebar state, current model selection |
 | `chat` | `history[]`, `messagesByChatId{}`, `currentChatId`, `undoState`, `isRegenerating`, `setRegenerateAbort`/`abortRegenerate` — auto-titles from first message, eviction at 50 chats / 200 messages per chat |
-| `interview` | Phase machine (`idle` → `config` → `running` → `result`), question bank, scores, history (persisted) |
-| `knowledge` | KB list, current KB detail, file management |
+| `interview` | Phase machine (`idle` → `answering` → `scoring` → `feedback` → `finished`), question bank, scores, deep-mode conversations, history (persisted), `kbId` for Agent-enhanced evaluation |
+| `knowledge` | KB list, current KB detail, file management, CRUD + `updateKB()` + reindex |
 
 ### Interview question sources (3 tabs in InterviewView)
 
 1. **题库出题** — Local hardcoded question bank (`src/data/questions/`). Six category files: `html.js`, `css.js`, `js.js`, `vue.js`, `react.js`, `engineering.js` — each exports an array of question objects (`{ id, category, difficulty, knowledgePoints, question }`). `index.js` aggregates them into `allQuestions`, `questionsByCategory`, and exports `selectQuestions()` for stratified random sampling (40% easy / 40% medium / 20% hard when difficulty is `'all'`; uniform random when a single difficulty is selected; falls back to random fill if a difficulty tier is underpopulated). Four presets: `frontend` (all 6 categories, 10 questions), `js-core` (6), `vue-special` (5), `css-html` (6).
-2. **文件出题** — User uploads a file → parsed client-side → `POST /api/questions/generate` → AI generates questions from content (or `POST /api/questions/generate-by-role` for a target job title).
-3. **知识库出题** — User selects a knowledge base → `POST /api/knowledge/:id/generate` → server aggregates all KB files → AI generates questions.
+2. **知识库出题** — User selects a knowledge base or uploads a file (auto-creates a temp KB) → `POST /api/knowledge/:id/generate` or `POST /api/knowledge/:id/agent-generate` (Agent-driven: searches KB first, then generates questions). Supports an "Agent 出题" checkbox toggle.
 
 ### Interview evaluation modes
 
-- **Single-score** (`/api/interview/score`): One answer → one score object. Temperature 0.3.
+- **Single-score** (`/api/interview/score`): One answer → one score object. Temperature 0.3. Returns `{ score, correctness, completeness, clarity, feedback, improvedAnswer }`.
 - **Deep evaluation** (`/api/interview/evaluate`): Multi-round follow-up. AI returns `{ action: "follow_up" | "complete", ... }`. Up to 3 rounds of follow-up questions before forcing a final score.
+- **Agent-driven evaluation** (`/api/interview/agent-evaluate`): Uses `agent.js` → `agentLoop`. LLM has access to `searchKnowledgeBase`, `gradeAnswer`, `generateQuestion` tools. Auto-searches KB (if provided), grades answers, and decides follow-up vs complete. Max 5 tool-call steps.
+
+### Interview result display components (`src/components/interview/`)
+
+| File | Purpose |
+|------|---------|
+| `InterviewSession.vue` | Live Q&A flow: answer input → code editor → submit → AI scoring → feedback |
+| `StatsDashboard.vue` | History analytics: 3 stat cards (count/avg/best) → score trend bar chart → dual-pane record list + inline detail |
+| `ScoreBadge.vue` | Colored score badge (sm/md/lg, optional `/10` denominator + text label). Used by all interview components |
+| `ConversationThread.vue` | Multi-round chat bubbles (user right/primary, AI left/surface). Supports compact mode |
+| `QuestionReviewCard.vue` | Single-question review: question → user answer or conversation → AI feedback → reference answer. Shared by InterviewSession, InterviewView, StatsDashboard |
+| `DualPaneLayout.vue` | Responsive split layout (desktop: side-by-side, mobile: stacked with collapsible left panel). Used by InterviewView finished + StatsDashboard list/detail |
+
+### InterviewView finished result (dual-pane)
+
+After completing an interview (phase `'finished'`), the view switches to a `DualPaneLayout`:
+- **Left pane (~32%)**: Question navigator — numbered list with `ScoreBadge` mini badges + difficulty labels. Click to select. Bottom section has "再来一次", export dropdown (md/txt), and "返回 AI 对话".
+- **Right pane (~68%)**: Selected question detail via `QuestionReviewCard` (shows user's actual answer), plus total score hero card and weak knowledge point tags at top.
 
 ### Knowledge base system
 
 File-system storage at `server/data/knowledge/`. Structure: `index.json` (KB list) + `{kb-id}/meta.json` (file metadata) + `{kb-id}/files/{file-id}.txt` (plain text). Files are parsed client-side by `docParser.js`, then sent as text to the server.
+
+On file upload, the server runs an async RAG pipeline: `chunkText()` → `getEmbedding()` → `addChunks()` (into LanceDB at `server/data/vectors/`). Reindexing (`POST /api/knowledge/:id/reindex`) re-runs this pipeline for all files in a KB, deleting old vectors first.
+
+KB names and descriptions are editable via `PATCH /api/knowledge/:id`. The detail view has inline edit controls (pencil icon toggles name/description inputs, ✓ save / ✕ cancel).
 
 ### Chat: abort & regenerate
 

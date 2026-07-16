@@ -2,9 +2,29 @@ const { Router } = require("express")
 const { DEFAULT_MODEL, sanitizeModel } = require("../config")
 const { callAI } = require("../services/aiCompletions")
 const { handleAIError } = require("../services/errorHandler")
-const { sanitizeString, clampNumber } = require("../utils/validate")
+const { sanitizeString } = require("../utils/validate")
 
 const router = Router()
+
+/** 格式化参考答案要点为编号列表 */
+function formatAnswerPoints(answerPoints) {
+  return Array.isArray(answerPoints)
+    ? answerPoints.map((p, i) => `${i + 1}. ${p}`).join("\n")
+    : (answerPoints || "无参考答案")
+}
+
+/** 构建评分结果对象 */
+function buildScoreResult(result, extra = {}) {
+  return {
+    ...extra,
+    score: result.score ?? 0,
+    correctness: result.correctness ?? 0,
+    completeness: result.completeness ?? 0,
+    clarity: result.clarity ?? 0,
+    feedback: result.feedback || "暂无评价",
+    improvedAnswer: result.improvedAnswer || "",
+  }
+}
 
 const SCORE_PROMPT = `你是一位资深的前端技术面试官。请根据以下信息对考生的回答进行评分。
 
@@ -64,9 +84,7 @@ router.post("/score", async (req, res) => {
     return res.status(400).json({ error: "question 和 userAnswer 为必填字段" })
   }
 
-  const pointsText = Array.isArray(answerPoints)
-    ? answerPoints.map((p, i) => `${i + 1}. ${p}`).join("\n")
-    : (answerPoints || "无参考答案")
+  const pointsText = formatAnswerPoints(answerPoints)
 
   const prompt = SCORE_PROMPT
     .replace("{question}", question)
@@ -77,14 +95,7 @@ router.post("/score", async (req, res) => {
     const result = await callAI({
       model, prompt, temperature: 0.3, maxTokens: 600, logTag: "interview/score",
     })
-    res.json({
-      score: result.score ?? 0,
-      correctness: result.correctness ?? 0,
-      completeness: result.completeness ?? 0,
-      clarity: result.clarity ?? 0,
-      feedback: result.feedback || "暂无评价",
-      improvedAnswer: result.improvedAnswer || "",
-    })
+    res.json(buildScoreResult(result))
   } catch (err) {
     handleAIError(res, err, "interview/score", { fallbackMessage: "评分服务异常" })
   }
@@ -109,15 +120,13 @@ router.post("/evaluate", async (req, res) => {
     return res.status(400).json({ error: "question 和 conversationHistory 为必填字段" })
   }
 
-  const pointsText = Array.isArray(answerPoints)
-    ? answerPoints.map((p, i) => `${i + 1}. ${p}`).join("\n")
-    : (answerPoints || "无参考答案")
+  const pointsText = formatAnswerPoints(answerPoints)
 
   const MAX_ROUNDS = 3
   const currentRounds = Math.floor(conversationHistory.length / 2)
   const forceComplete =
     currentRounds >= MAX_ROUNDS
-      ? "**已达追问上限，本**次**必须**给出最终评价（action=complete），不要继续追问。**"
+      ? "**已达追问上限，本次必须给出最终评价（action=complete），不要继续追问。**"
       : ""
 
   const historyText = conversationHistory
@@ -149,15 +158,7 @@ router.post("/evaluate", async (req, res) => {
     }
 
     // action === "complete" or fallback
-    res.json({
-      action: "complete",
-      score: result.score ?? 0,
-      correctness: result.correctness ?? 0,
-      completeness: result.completeness ?? 0,
-      clarity: result.clarity ?? 0,
-      feedback: result.feedback || "暂无评价",
-      improvedAnswer: result.improvedAnswer || "",
-    })
+    res.json(buildScoreResult(result, { action: "complete" }))
   } catch (err) {
     handleAIError(res, err, "interview/evaluate", { fallbackMessage: "评估服务异常" })
   }

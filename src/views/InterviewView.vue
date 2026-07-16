@@ -10,6 +10,9 @@ import { parseFile } from '@/utils/docParser'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import { agentGenerateFromKB, createKnowledgeBase, uploadFileToKB } from '@/utils/knowledgeApi'
 import InterviewSession from '@/components/interview/InterviewSession.vue'
+import DualPaneLayout from '@/components/interview/DualPaneLayout.vue'
+import QuestionReviewCard from '@/components/interview/QuestionReviewCard.vue'
+import ScoreBadge from '@/components/interview/ScoreBadge.vue'
 
 const router = useRouter()
 /** 面试状态（阶段、题目、答案、分数等） */
@@ -219,8 +222,15 @@ async function startKBInterview() {
     kbError.value = ''
     try {
       // 创建临时知识库
-      const kb = await createKnowledgeBase({ name: uploadedFile.value.name, description: '快速上传' })
-      await uploadFileToKB(kb.id, { name: uploadedFile.value.name, type: uploadedFile.value.type, content: uploadedFile.value.text })
+      const kb = await createKnowledgeBase({
+        name: uploadedFile.value.name,
+        description: '快速上传',
+      })
+      await uploadFileToKB(kb.id, {
+        name: uploadedFile.value.name,
+        type: uploadedFile.value.type,
+        content: uploadedFile.value.text,
+      })
       // 刷新 KB 列表
       await knowledgeStore.fetchKBs()
       selectedKBId.value = kb.id
@@ -372,7 +382,6 @@ function goToChat() {
   router.push({ name: 'Chat' })
 }
 
-import { getScoreColor, getScoreBg } from '@/utils/interviewHelpers'
 import { exportRecords } from '@/utils/interviewExport'
 
 // 结束后的统计
@@ -385,11 +394,13 @@ const resultStats = computed(() => ({
   scores: interviewStore.scores,
 }))
 
+/** 结果页中选中的题目索引（双栏左侧导航） */
+const selectedQuestionIndex = ref(0)
+/** 移动端摘要是否展开 */
+const showMobileSummary = ref(false)
+
 /** 导出菜单是否可见 */
 const showExportMenu = ref(false)
-/** 当前选择的导出格式 */
-const exportFormat = ref('md')
-
 /**
  * 构建当前面试记录对象（用于导出）
  * 合并面试类型标签、题目、答案、分数、对话记录等
@@ -410,7 +421,6 @@ function buildCurrentRecord() {
 
 /** 执行导出：触发浏览器下载 */
 function handleExport(format) {
-  exportFormat.value = format
   exportRecords([buildCurrentRecord()], format)
   showExportMenu.value = false
 }
@@ -532,98 +542,6 @@ function handleExportBackdropClick(e) {
           </div>
         </template>
 
-        <!-- 纯文件模式（合并到知识库） -->
-        <template v-if="false">
-          <!-- 文件上传区域（未上传时） -->
-          <div
-            v-if="!uploadedFile && !isParsing"
-            role="button"
-            tabindex="0"
-            aria-label="点击上传文件"
-            class="mt-4 flex cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-border px-4 py-8 text-center transition-all duration-200 hover:border-primary/50 hover:bg-surface-input/50 sm:px-6 sm:py-10"
-            @click="triggerFileSelect"
-            @keydown.enter="triggerFileSelect"
-            @keydown.space.prevent="triggerFileSelect"
-          >
-            <div class="flex h-14 w-14 items-center justify-center rounded-xl bg-primary-muted">
-              <Icon icon="lucide:upload" class="h-7 w-7 text-primary" />
-            </div>
-            <div>
-              <p class="text-sm font-medium text-text-primary">点击上传文件</p>
-              <p class="mt-1 text-xs text-text-muted">
-                支持 PDF / Word / TXT，基于文件内容 AI 生成面试题
-              </p>
-            </div>
-            <input
-              ref="fileInputRef"
-              type="file"
-              accept=".pdf,.docx,.txt,.md,.json,.csv"
-              class="hidden"
-              @change="handleFileUpload"
-            />
-          </div>
-
-          <!-- 解析中 -->
-          <div
-            v-if="isParsing"
-            class="mt-4 flex flex-col items-center gap-3 rounded-2xl border border-border bg-surface-elevated px-6 py-10 text-center"
-          >
-            <div
-              class="inline-block h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent"
-            />
-            <p class="text-sm text-text-muted">正在解析文件...</p>
-          </div>
-
-          <!-- 文件信息 + 预览（上传成功后） -->
-          <div v-if="uploadedFile && !fileError" class="mt-4 space-y-3">
-            <div class="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <Icon icon="lucide:file-text" class="h-5 w-5 text-emerald-500" />
-                  <div>
-                    <p class="text-sm font-medium text-text-primary">{{ uploadedFile.name }}</p>
-                    <p class="text-xs text-text-muted">
-                      {{
-                        uploadedFile.type === 'pdf'
-                          ? 'PDF'
-                          : uploadedFile.type === 'word'
-                            ? 'Word'
-                            : '文本'
-                      }}
-                      &middot; {{ uploadedFile.text.length }} 字
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  class="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-red-500/10 hover:text-red-500"
-                  @click="removeUploadedFile"
-                >
-                  <Icon icon="lucide:x" class="h-4 w-4" />
-                </button>
-              </div>
-              <!-- 内容预览 -->
-              <div
-                class="mt-3 max-h-32 overflow-y-auto rounded-lg border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-text-muted"
-              >
-                {{ uploadedFile.text.slice(0, 500)
-                }}{{ uploadedFile.text.length > 500 ? '...' : '' }}
-              </div>
-            </div>
-          </div>
-
-          <!-- 错误提示 -->
-          <div
-            v-if="fileError"
-            class="mt-4 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-500"
-          >
-            <div class="flex items-start gap-2">
-              <Icon icon="lucide:alert-circle" class="mt-0.5 h-4 w-4 shrink-0" />
-              <p>{{ fileError }}</p>
-            </div>
-          </div>
-        </template>
-
         <!-- 知识库模式 -->
         <template v-if="activeTab === 'knowledge'">
           <!-- 加载中 -->
@@ -670,12 +588,16 @@ function handleExportBackdropClick(e) {
                 @dragleave.prevent="isDragOver = false"
                 @drop.prevent="handleDrop"
               >
-                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-muted">
+                <div
+                  class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-muted"
+                >
                   <Icon icon="lucide:upload" class="h-5 w-5 text-primary" />
                 </div>
                 <div>
                   <p class="text-sm font-medium text-text-primary">快速上传文件出题</p>
-                  <p class="text-xs text-text-muted">点击或拖拽上传 PDF/Word/TXT，自动创建知识库并生成题目</p>
+                  <p class="text-xs text-text-muted">
+                    点击或拖拽上传 PDF/Word/TXT，自动创建知识库并生成题目
+                  </p>
                 </div>
               </div>
               <input
@@ -693,8 +615,12 @@ function handleExportBackdropClick(e) {
             >
               <div class="flex items-center gap-2 min-w-0">
                 <Icon icon="lucide:file-text" class="h-5 w-5 shrink-0 text-emerald-500" />
-                <span class="text-sm font-medium text-text-primary truncate">{{ uploadedFile.name }}</span>
-                <span class="shrink-0 text-xs text-text-muted">{{ uploadedFile.text.length }} 字</span>
+                <span class="text-sm font-medium text-text-primary truncate">{{
+                  uploadedFile.name
+                }}</span>
+                <span class="shrink-0 text-xs text-text-muted"
+                  >{{ uploadedFile.text.length }} 字</span
+                >
               </div>
               <button
                 type="button"
@@ -709,7 +635,9 @@ function handleExportBackdropClick(e) {
               v-if="isParsing"
               class="flex items-center gap-3 rounded-2xl border border-border bg-surface-elevated px-4 py-3"
             >
-              <div class="inline-block h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              <div
+                class="inline-block h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"
+              />
               <p class="text-sm text-text-muted">正在解析文件...</p>
             </div>
           </div>
@@ -849,7 +777,7 @@ function handleExportBackdropClick(e) {
         </div>
 
         <!-- 开始按钮 -->
-        <div class="mt-6 flex justify-center">
+        <div class="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
           <!-- 题库模式：预设类型按钮 -->
           <button
             v-if="activeTab === 'bank' && !isCustomRole"
@@ -943,166 +871,280 @@ function handleExportBackdropClick(e) {
       @quit="backToHome"
     />
 
-    <!-- 面试结果 -->
-    <div v-if="interviewStore.phase === 'finished'" class="flex-1 overflow-y-auto thin-scrollbar">
-      <div class="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
-        <!-- 总分大卡片 -->
-        <div
-          class="mb-6 rounded-2xl border border-border bg-surface-elevated p-5 text-center sm:mb-8 sm:p-8"
-        >
-          <div
-            class="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full"
-            :class="getScoreBg(resultStats.totalScore)"
-          >
-            <span class="text-3xl font-bold" :class="getScoreColor(resultStats.totalScore)"
-              >{{ resultStats.totalScore
-              }}<span class="text-base font-normal text-text-muted">/10</span></span
-            >
-          </div>
-          <h2 class="text-lg font-semibold text-text-primary">面试完成</h2>
-          <p class="mt-1 text-sm text-text-muted">
-            {{
-              resultStats.totalScore >= 8
-                ? '表现优秀！继续保持！'
-                : resultStats.totalScore >= 5
-                  ? '表现不错，还有提升空间'
-                  : '还需要多加练习，加油！'
-            }}
-          </p>
-        </div>
-
-        <!-- 分类得分 -->
-        <div
-          v-if="Object.keys(resultStats.categoryStats).length"
-          class="mb-6 rounded-2xl border border-border bg-surface-elevated p-5"
-        >
-          <h3 class="mb-3 text-sm font-semibold text-text-primary">分类得分</h3>
-          <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <div
-              v-for="(score, cat) in resultStats.categoryStats"
-              :key="cat"
-              class="rounded-xl border border-border bg-surface p-3 text-center"
-            >
-              <div class="text-sm text-text-secondary capitalize">{{ cat }}</div>
-              <div class="mt-1 text-lg font-semibold" :class="getScoreColor(score)">
-                {{ score }}
-              </div>
+    <!-- 面试结果 — 双栏布局 -->
+    <div v-if="interviewStore.phase === 'finished'" class="flex-1 overflow-hidden">
+      <DualPaneLayout left-width="32%">
+        <template #left>
+          <div class="flex h-full flex-col">
+            <div class="border-b border-border px-4 py-3">
+              <h3 class="text-sm font-semibold text-text-primary">题目列表</h3>
             </div>
-          </div>
-        </div>
-
-        <!-- 逐题回顾 -->
-        <div class="mb-6 rounded-2xl border border-border bg-surface-elevated p-5">
-          <h3 class="mb-3 text-sm font-semibold text-text-primary">题目回顾</h3>
-          <div class="space-y-3">
-            <div
-              v-for="(q, idx) in resultStats.questions"
-              :key="q.id"
-              class="rounded-xl border border-border bg-surface p-4"
-            >
-              <div class="flex items-center gap-2 mb-2">
-                <span class="text-xs text-text-muted">Q{{ idx + 1 }}</span>
-                <span class="text-sm text-text-primary truncate">{{ q.question }}</span>
-              </div>
-              <div class="flex items-center gap-3 text-xs">
-                <span class="text-text-muted">得分：</span>
-                <span
-                  class="font-semibold"
-                  :class="getScoreColor(resultStats.scores[q.id]?.score || 0)"
-                >
-                  {{ resultStats.scores[q.id]?.score || '-' }}
-                </span>
-                <span v-if="resultStats.scores[q.id]?.feedback" class="truncate text-text-muted">
-                  {{ resultStats.scores[q.id]?.feedback }}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 薄弱点 -->
-        <div
-          v-if="resultStats.weakPoints.length"
-          class="mb-8 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5"
-        >
-          <h3 class="mb-3 text-sm font-semibold text-text-primary">需要加强的知识点</h3>
-          <div class="flex flex-wrap gap-2">
-            <span
-              v-for="wp in resultStats.weakPoints"
-              :key="wp.knowledgePoint"
-              class="rounded-full border border-amber-500/20 bg-surface px-3 py-1 text-xs text-text-secondary"
-            >
-              {{ wp.knowledgePoint }}（{{ wp.score }} 分）
-            </span>
-          </div>
-        </div>
-
-        <!-- 操作按钮 -->
-        <div class="flex flex-col items-center gap-3 pb-8">
-          <button
-            type="button"
-            class="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-medium text-white transition-all duration-200 hover:bg-primary/90"
-            @click="backToHome"
-          >
-            <Icon icon="lucide:rotate-cw" class="h-4 w-4" />
-            再来一次
-          </button>
-          <!-- 导出按钮 -->
-          <div class="relative">
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-xl border border-border px-4 py-2.5 text-sm text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary"
-              @click="showExportMenu = !showExportMenu"
-            >
-              <Icon icon="lucide:download" class="h-4 w-4" />
-              导出本次面试
-            </button>
-            <Teleport to="body">
-              <div
-                v-if="showExportMenu"
-                class="fixed inset-0 z-[999]"
-                @click="handleExportBackdropClick"
-              />
-            </Teleport>
-            <Transition name="export-menu">
-              <div
-                v-if="showExportMenu"
-                class="absolute left-1/2 top-full z-[1001] mt-1 -translate-x-1/2"
+            <div class="flex-1 overflow-y-auto thin-scrollbar">
+              <button
+                v-for="(q, idx) in resultStats.questions"
+                :key="q.id"
+                type="button"
+                class="flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left transition-colors last:border-b-0"
+                :class="
+                  selectedQuestionIndex === idx
+                    ? 'border-l-2 border-l-primary bg-primary/5'
+                    : 'border-l-2 border-l-transparent hover:bg-surface'
+                "
+                @click="selectedQuestionIndex = idx"
               >
-                <div
-                  class="overflow-hidden rounded-xl border border-border bg-surface-elevated p-1 shadow-lg"
+                <ScoreBadge
+                  v-if="resultStats.scores[q.id]"
+                  :score="resultStats.scores[q.id].score"
+                  size="sm"
+                />
+                <span
+                  v-else
+                  class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-surface-input text-[10px] text-text-muted"
+                  >Q{{ idx + 1 }}</span
                 >
-                  <button
-                    type="button"
-                    class="block w-full rounded-lg px-4 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary whitespace-nowrap"
-                    @click="handleExport('md')"
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs text-text-muted">
+                    Q{{ idx + 1 }}
+                    <span
+                      class="ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                      :class="{
+                        'bg-emerald-500/10 text-emerald-500': q.difficulty === 'easy',
+                        'bg-amber-500/10 text-amber-500': q.difficulty === 'medium',
+                        'bg-red-500/10 text-red-500': q.difficulty === 'hard',
+                      }"
+                      >{{
+                        q.difficulty === 'easy'
+                          ? '简单'
+                          : q.difficulty === 'medium'
+                            ? '中等'
+                            : '困难'
+                      }}</span
+                    >
+                  </div>
+                  <div class="mt-1 truncate text-sm text-text-primary">{{ q.question }}</div>
+                </div>
+              </button>
+            </div>
+            <div class="hidden lg:block space-y-2 border-t border-border px-4 py-3">
+              <button
+                type="button"
+                class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+                @click="backToHome"
+              >
+                <Icon icon="lucide:rotate-cw" class="h-4 w-4" />再来一次
+              </button>
+              <div class="relative">
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-4 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-input"
+                  @click="showExportMenu = !showExportMenu"
+                >
+                  <Icon icon="lucide:download" class="h-3.5 w-3.5" />导出本次面试
+                </button>
+                <Teleport to="body"
+                  ><div
+                    v-if="showExportMenu"
+                    class="fixed inset-0 z-[999]"
+                    @click="handleExportBackdropClick"
+                /></Teleport>
+                <Transition name="export-menu">
+                  <div
+                    v-if="showExportMenu"
+                    class="absolute left-1/2 top-full z-[1001] mt-1 -translate-x-1/2"
                   >
-                    Markdown (.md)
-                  </button>
-                  <button
-                    type="button"
-                    class="block w-full rounded-lg px-4 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary whitespace-nowrap"
-                    @click="handleExport('txt')"
-                  >
-                    纯文本 (.txt)
-                  </button>
+                    <div
+                      class="overflow-hidden rounded-xl border border-border bg-surface-elevated p-1 shadow-lg"
+                    >
+                      <button
+                        type="button"
+                        class="block w-full rounded-lg px-4 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary whitespace-nowrap"
+                        @click="handleExport('md')"
+                      >
+                        Markdown (.md)
+                      </button>
+                      <button
+                        type="button"
+                        class="block w-full rounded-lg px-4 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary whitespace-nowrap"
+                        @click="handleExport('txt')"
+                      >
+                        纯文本 (.txt)
+                      </button>
+                    </div>
+                  </div>
+                </Transition>
+              </div>
+              <button
+                type="button"
+                class="flex w-full items-center justify-center gap-1.5 text-xs text-text-muted transition-colors hover:text-text-secondary"
+                @click="goToChat"
+              >
+                <Icon icon="lucide:arrow-left" class="h-3.5 w-3.5" />返回 AI 对话
+              </button>
+            </div>
+          </div>
+        </template>
+        <template #right>
+          <div class="thin-scrollbar h-full overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
+            <div class="mx-auto max-w-2xl">
+              <!-- 桌面端：完整英雄卡 + 薄弱点 -->
+              <div class="hidden lg:block">
+                <div
+                  class="mb-6 rounded-2xl border border-border bg-surface-elevated p-5 text-center sm:p-8"
+                >
+                  <div class="mb-3 flex justify-center">
+                    <ScoreBadge
+                      :score="resultStats.totalScore"
+                      size="lg"
+                      :show-denominator="true"
+                    />
+                  </div>
+                  <h2 class="text-lg font-semibold text-text-primary">面试完成</h2>
+                  <p class="mt-1 text-sm text-text-muted">
+                    {{
+                      resultStats.totalScore >= 8
+                        ? '表现优秀！继续保持！'
+                        : resultStats.totalScore >= 5
+                          ? '表现不错，还有提升空间'
+                          : '还需要多加练习，加油！'
+                    }}
+                  </p>
+                </div>
+                <div
+                  v-if="resultStats.weakPoints.length"
+                  class="mb-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5"
+                >
+                  <h3 class="mb-3 text-sm font-semibold text-text-primary">需要加强的知识点</h3>
+                  <div class="flex flex-wrap gap-2">
+                    <span
+                      v-for="wp in resultStats.weakPoints"
+                      :key="wp.knowledgePoint"
+                      class="rounded-full border border-amber-500/20 bg-surface px-3 py-1 text-xs text-text-secondary"
+                      >{{ wp.knowledgePoint }}（{{ wp.score }} 分）</span
+                    >
+                  </div>
                 </div>
               </div>
-            </Transition>
+
+              <!-- 移动端：紧凑摘要条 -->
+              <div class="mb-4 lg:hidden">
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-3 rounded-xl border border-border bg-surface-elevated px-4 py-3 text-left transition-colors hover:bg-surface"
+                  @click="showMobileSummary = !showMobileSummary"
+                >
+                  <ScoreBadge :score="resultStats.totalScore" size="sm" />
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm font-medium text-text-primary">
+                      总分 {{ resultStats.totalScore }}/10
+                    </div>
+                    <div class="text-xs text-text-muted">
+                      {{
+                        resultStats.totalScore >= 8
+                          ? '表现优秀'
+                          : resultStats.totalScore >= 5
+                            ? '表现不错'
+                            : '还需加油'
+                      }}
+                      <template v-if="resultStats.weakPoints.length">
+                        · {{ resultStats.weakPoints.length }} 个薄弱点</template
+                      >
+                    </div>
+                  </div>
+                  <Icon
+                    :icon="showMobileSummary ? 'lucide:chevron-up' : 'lucide:chevron-down'"
+                    class="h-4 w-4 text-text-muted shrink-0"
+                  />
+                </button>
+                <!-- 展开的薄弱点列表 -->
+                <div
+                  v-if="showMobileSummary && resultStats.weakPoints.length"
+                  class="mt-2 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4"
+                >
+                  <div class="flex flex-wrap gap-1.5">
+                    <span
+                      v-for="wp in resultStats.weakPoints"
+                      :key="wp.knowledgePoint"
+                      class="rounded-full border border-amber-500/20 bg-surface px-2.5 py-0.5 text-xs text-text-secondary"
+                      >{{ wp.knowledgePoint }}（{{ wp.score }} 分）</span
+                    >
+                  </div>
+                </div>
+              </div>
+              <div v-if="resultStats.questions[selectedQuestionIndex]">
+                <h3 class="mb-3 text-sm font-semibold text-text-primary">题目回顾</h3>
+                <QuestionReviewCard
+                  :question="resultStats.questions[selectedQuestionIndex]"
+                  :score="resultStats.scores[resultStats.questions[selectedQuestionIndex].id]"
+                  :answer="interviewStore.answers[resultStats.questions[selectedQuestionIndex].id]"
+                  :conversations="
+                    interviewStore.conversations[resultStats.questions[selectedQuestionIndex].id] ||
+                    []
+                  "
+                  :index="selectedQuestionIndex"
+                />
+              </div>
+
+              <!-- 移动端操作按钮 -->
+              <div class="mt-6 space-y-2 lg:hidden">
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+                  @click="backToHome"
+                >
+                  <Icon icon="lucide:rotate-cw" class="h-4 w-4" />再来一次
+                </button>
+                <div class="relative">
+                  <button
+                    type="button"
+                    class="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-4 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-input"
+                    @click="showExportMenu = !showExportMenu"
+                  >
+                    <Icon icon="lucide:download" class="h-3.5 w-3.5" />导出本次面试
+                  </button>
+                  <Teleport to="body"
+                    ><div
+                      v-if="showExportMenu"
+                      class="fixed inset-0 z-[999]"
+                      @click="handleExportBackdropClick"
+                  /></Teleport>
+                  <Transition name="export-menu">
+                    <div
+                      v-if="showExportMenu"
+                      class="absolute left-1/2 top-full z-[1001] mt-1 -translate-x-1/2"
+                    >
+                      <div
+                        class="overflow-hidden rounded-xl border border-border bg-surface-elevated p-1 shadow-lg"
+                      >
+                        <button
+                          type="button"
+                          class="block w-full rounded-lg px-4 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary whitespace-nowrap"
+                          @click="handleExport('md')"
+                        >
+                          Markdown (.md)
+                        </button>
+                        <button
+                          type="button"
+                          class="block w-full rounded-lg px-4 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-surface-input hover:text-text-primary whitespace-nowrap"
+                          @click="handleExport('txt')"
+                        >
+                          纯文本 (.txt)
+                        </button>
+                      </div>
+                    </div>
+                  </Transition>
+                </div>
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-center gap-1.5 text-xs text-text-muted transition-colors hover:text-text-secondary"
+                  @click="goToChat"
+                >
+                  <Icon icon="lucide:arrow-left" class="h-3.5 w-3.5" />返回 AI 对话
+                </button>
+              </div>
+            </div>
           </div>
-          <div class="flex items-center gap-1.5 text-xs text-text-muted">
-            <Icon icon="lucide:lightbulb" class="h-3.5 w-3.5 shrink-0" />
-            去 AI 对话中引用面试记录，分析薄弱点
-          </div>
-          <button
-            type="button"
-            class="text-sm text-text-muted transition-colors hover:text-text-secondary"
-            @click="goToChat"
-          >
-            返回 AI 对话
-          </button>
-        </div>
-      </div>
+        </template>
+      </DualPaneLayout>
     </div>
   </div>
 </template>

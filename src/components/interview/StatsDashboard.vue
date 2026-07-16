@@ -5,14 +5,15 @@ import { useInterviewStore } from '@/stores/interview'
 import { Icon } from '@iconify/vue'
 import {
   getScoreColor,
-  getScoreBg,
   getScoreBgSolid,
-  getScoreBorder,
   getScoreLabel,
-  difficultyMap,
-  difficultyColor,
+  getCategoryStats,
+  getRecordWeakPoints,
 } from '@/utils/interviewHelpers'
 import Modal from '@/components/Modal.vue'
+import DualPaneLayout from './DualPaneLayout.vue'
+import QuestionReviewCard from './QuestionReviewCard.vue'
+import ScoreBadge from './ScoreBadge.vue'
 import { exportRecords } from '@/utils/interviewExport'
 
 Chart.register(...registerables)
@@ -22,30 +23,28 @@ const interviewStore = useInterviewStore()
 
 /** 导出菜单是否可见 */
 const showExportMenu = ref(false)
-/** 当前选择的导出格式 */
-const exportFormat = ref('md')
 
 /** 执行导出：调用 exportRecords 工具函数触发浏览器下载 */
 function handleExport(format) {
-  exportFormat.value = format
   const records = interviewStore.history
   if (records.length === 0) return
   exportRecords(records, format)
   showExportMenu.value = false
 }
 
-/** 雷达图 canvas DOM 引用 */
-const radarCanvas = ref(null)
 /** 柱状图 canvas DOM 引用 */
 const barCanvas = ref(null)
-/** Chart.js 雷达图实例 */
-let radarChart = null
 /** Chart.js 柱状图实例 */
 let barChart = null
 
-// 详情弹窗
-/** 当前查看详情的面试记录 */
-const detailRecord = ref(null)
+// 详情弹窗 — replaced with inline dual-pane
+/** 左侧列表中当前选中的记录 ID */
+const selectedRecordId = ref(null)
+
+/** 当前选中记录 */
+const selectedRecord = computed(
+  () => interviewStore.history.find((r) => r.id === selectedRecordId.value) || null,
+)
 
 // 删除模式
 /** 是否处于批量删除模式 */
@@ -64,37 +63,6 @@ const stats = computed(() => interviewStore.overallStats)
 const bestScore = computed(() => {
   if (interviewStore.history.length === 0) return 0
   return Math.max(...interviewStore.history.map((h) => h.totalScore))
-})
-
-/**
- * 全历史分类得分汇总
- * 遍历所有面试记录中所有的题目，按分类（HTML/CSS/JS 等）聚合求平均分
- */
-const overallCategoryStats = computed(() => {
-  const map = {}
-  for (const record of interviewStore.history) {
-    for (const q of record.questions || []) {
-      const s = record.scores[q.id]
-      if (!s) continue
-      if (!map[q.category]) map[q.category] = { total: 0, count: 0 }
-      map[q.category].total += s.score || 0
-      map[q.category].count += 1
-    }
-  }
-  const result = {}
-  for (const [cat, stat] of Object.entries(map)) {
-    result[cat] = Math.round((stat.total / stat.count) * 10) / 10
-  }
-  return result
-})
-
-/** 知识点维度得分数据（用于雷达图），来自 store 的 knowledgePointStats */
-const latestRadarData = computed(() => {
-  const kpStats = interviewStore.knowledgePointStats
-  return {
-    labels: Object.keys(kpStats),
-    data: Object.values(kpStats),
-  }
 })
 
 /** 面试记录按完成时间降序排列（最新的在前） */
@@ -153,14 +121,11 @@ function executeDelete() {
   exitDeleteMode()
 }
 
-/** 打开面试记录详情弹窗 */
-function openDetail(record) {
-  detailRecord.value = record
-}
-
-/** 关闭详情弹窗 */
-function closeDetail() {
-  detailRecord.value = null
+/** 删除当前选中的记录 */
+function deleteSelectedRecord() {
+  if (!selectedRecord.value) return
+  interviewStore.deleteHistoryRecord(selectedRecord.value.id)
+  selectedRecordId.value = null
 }
 
 /** 图表主题色前缀（indigo-500），后接透明度值拼接成完整 rgba */
@@ -169,89 +134,38 @@ const chartAccent = 'rgba(99, 102, 241,'
 const chartGridColor = 'rgba(148, 163, 184, 0.12)'
 
 /**
- * 渲染知识点雷达图
- * 使用 Chart.js radar 类型，展示各知识点的掌握程度（0-10 分）
- * 先销毁旧图表实例再创建新的，避免 canvas 冲突
+ * 渲染得分趋势折线图
+ * 平滑曲线 + 面积填充，每点按分数着色
  */
-function renderRadarChart() {
-  if (!radarCanvas.value) return
-  if (radarChart) radarChart.destroy()
-  const { labels, data } = latestRadarData.value
-  if (labels.length === 0) return
-  radarChart = new Chart(radarCanvas.value, {
-    type: 'radar',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: '得分',
-          data,
-          backgroundColor: `${chartAccent} 0.12)`,
-          borderColor: `${chartAccent} 0.65)`,
-          borderWidth: 2,
-          pointBackgroundColor: `${chartAccent} 1)`,
-          pointBorderColor: 'transparent',
-          pointRadius: 4,
-          pointHoverRadius: 6,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: true,
-      scales: {
-        r: {
-          min: 0,
-          max: 10,
-          ticks: { stepSize: 2, display: false, backdropColor: 'transparent' },
-          grid: { color: chartGridColor },
-          angleLines: { color: chartGridColor },
-          pointLabels: {
-            font: { size: 11, family: 'inherit' },
-            color: '#94a3b8',
-          },
-        },
-      },
-      plugins: { legend: { display: false } },
-    },
-  })
-}
-
-/**
- * 渲染得分趋势柱状图
- * 每根柱子按分数着色：>=8 绿色，>=5 橙色，<5 红色
- */
-function renderBarChart() {
+function renderLineChart() {
   if (!barCanvas.value) return
   if (barChart) barChart.destroy()
   const trend = stats.value?.scoreTrend
   if (!trend || trend.length === 0) return
   barChart = new Chart(barCanvas.value, {
-    type: 'bar',
+    type: 'line',
     data: {
       labels: trend.map((t) => t.date),
       datasets: [
         {
           label: '总分',
           data: trend.map((t) => t.score),
-          // 根据分数段动态着色：>=8 绿色，5-7 橙色，<5 红色
-          backgroundColor: trend.map((t) =>
+          borderColor: `${chartAccent} 0.8)`,
+          backgroundColor: `${chartAccent} 0.08)`,
+          borderWidth: 2.5,
+          fill: true,
+          tension: 0.35,
+          pointBackgroundColor: trend.map((t) =>
             t.score >= 8
-              ? `${chartAccent} 0.55)`
+              ? `${chartAccent} 1)`
               : t.score >= 5
-                ? 'rgba(245, 158, 11, 0.45)'
-                : 'rgba(239, 68, 68, 0.4)',
+                ? 'rgba(245, 158, 11, 1)'
+                : 'rgba(239, 68, 68, 1)',
           ),
-          borderColor: trend.map((t) =>
-            t.score >= 8
-              ? `${chartAccent} 0.8)`
-              : t.score >= 5
-                ? 'rgba(245, 158, 11, 0.7)'
-                : 'rgba(239, 68, 68, 0.65)',
-          ),
-          borderWidth: 1,
-          borderRadius: 6,
-          borderSkipped: false,
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
+          pointRadius: 5,
+          pointHoverRadius: 7,
         },
       ],
     },
@@ -277,62 +191,18 @@ function renderBarChart() {
   })
 }
 
-// 雷达图数据变化时重新渲染（使用 RAF 确保 canvas 挂载后执行）
-watch(latestRadarData, () => requestAnimationFrame(renderRadarChart), { deep: true })
+// 趋势数据变化时重新渲染
 watch(
   () => stats.value,
-  () => requestAnimationFrame(renderBarChart),
+  () => requestAnimationFrame(renderLineChart),
   { deep: true },
 )
 onMounted(() => {
-  requestAnimationFrame(() => {
-    renderRadarChart()
-    renderBarChart()
-  })
+  requestAnimationFrame(() => renderLineChart())
 })
-// 组件卸载时销毁 Chart.js 实例，释放 canvas 资源
 onUnmounted(() => {
-  if (radarChart) radarChart.destroy()
   if (barChart) barChart.destroy()
 })
-
-// 详情弹窗
-/**
- * 计算某条面试记录的分类得分
- * 与全局 overallCategoryStats 逻辑相同，但仅针对单条记录
- */
-function detailCategoryStats(record) {
-  const map = {}
-  for (const q of record.questions || []) {
-    const s = record.scores[q.id]
-    if (!s) continue
-    if (!map[q.category]) map[q.category] = { total: 0, count: 0 }
-    map[q.category].total += s.score || 0
-    map[q.category].count += 1
-  }
-  const result = {}
-  for (const [cat, stat] of Object.entries(map)) {
-    result[cat] = Math.round((stat.total / stat.count) * 10) / 10
-  }
-  return result
-}
-
-/**
- * 获取单条记录的薄弱知识点列表
- * 筛选平均分 < 5 的分类，按分数升序排列（最薄弱排前面）
- */
-function detailWeakPoints(record) {
-  const catStats = detailCategoryStats(record)
-  return Object.entries(catStats)
-    .filter(([, s]) => s < 5)
-    .map(([cat, s]) => ({ knowledgePoint: cat, score: s }))
-    .sort((a, b) => a.score - b.score)
-}
-
-/** 点击详情弹窗遮罩层关闭 */
-function handleDetailBackdropClick(e) {
-  if (e.target === e.currentTarget) closeDetail()
-}
 
 /** 点击导出菜单遮罩层关闭 */
 function handleExportBackdropClick(e) {
@@ -404,7 +274,7 @@ function handleExportBackdropClick(e) {
             </Transition>
           </div>
         </div>
-        <div class="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4 animate-fade-up">
+        <div class="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 animate-fade-up">
           <div class="stat-card rounded-2xl border border-border bg-surface-elevated p-4 sm:p-5">
             <div class="mb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">
               面试次数
@@ -464,89 +334,10 @@ function handleExportBackdropClick(e) {
               />
             </div>
           </div>
-
-          <div class="stat-card rounded-2xl border border-border bg-surface-elevated p-4 sm:p-5">
-            <div class="mb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted">
-              薄弱知识点
-            </div>
-            <div class="flex items-baseline gap-1">
-              <span
-                class="text-2xl font-bold tracking-tight sm:text-3xl"
-                :class="
-                  interviewStore.weakPoints.length === 0 ? 'text-emerald-500' : 'text-amber-500'
-                "
-              >
-                {{ interviewStore.weakPoints.length }}
-              </span>
-              <span class="text-xs text-text-muted">项</span>
-            </div>
-            <div class="mt-3 flex gap-1 flex-wrap">
-              <span
-                v-for="wp in interviewStore.weakPoints.slice(0, 3)"
-                :key="wp.knowledgePoint"
-                class="truncate rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-500"
-                >{{ wp.knowledgePoint }}</span
-              >
-              <span
-                v-if="interviewStore.weakPoints.length > 3"
-                class="text-[10px] text-text-muted self-center"
-                >+{{ interviewStore.weakPoints.length - 3 }}</span
-              >
-              <span
-                v-if="interviewStore.weakPoints.length === 0"
-                class="text-[10px] text-emerald-500"
-                >全部掌握</span
-              >
-            </div>
-          </div>
         </div>
 
-        <!-- 分析行：雷达图 + 分类得分 -->
-        <div class="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_340px] animate-fade-up stagger-2">
-          <!-- 左：雷达图 -->
-          <div class="rounded-2xl border border-border bg-surface-elevated p-5 sm:p-6">
-            <h3 class="mb-5 text-sm font-semibold text-text-primary">知识点掌握度</h3>
-            <div v-if="latestRadarData.labels.length > 0" class="mx-auto" style="max-width: 360px">
-              <canvas ref="radarCanvas" />
-            </div>
-            <p v-else class="py-12 text-center text-xs text-text-muted">
-              完成面试后可查看知识点评分雷达图
-            </p>
-          </div>
-
-          <!-- 右：全历史分类得分 -->
-          <div class="rounded-2xl border border-border bg-surface-elevated p-5">
-            <h3 class="mb-4 text-sm font-semibold text-text-primary">分类得分总览</h3>
-            <div v-if="Object.keys(overallCategoryStats).length" class="space-y-3">
-              <div
-                v-for="(score, cat) in overallCategoryStats"
-                :key="cat"
-                class="flex items-center gap-3"
-              >
-                <span class="w-16 shrink-0 text-xs capitalize text-text-muted">{{ cat }}</span>
-                <div class="h-2 flex-1 overflow-hidden rounded-full bg-surface-input">
-                  <div
-                    class="h-full rounded-full transition-all duration-700"
-                    :class="getScoreBgSolid(score)"
-                    :style="{ width: score * 10 + '%' }"
-                  />
-                </div>
-                <span
-                  class="w-8 shrink-0 text-right text-xs font-semibold"
-                  :class="getScoreColor(score)"
-                  >{{ score }}</span
-                >
-              </div>
-              <p class="text-[11px] text-text-muted mt-3">
-                综合 {{ stats?.totalInterviews || 0 }} 次面试数据
-              </p>
-            </div>
-            <p v-else class="py-8 text-center text-xs text-text-muted">暂无分类数据</p>
-          </div>
-        </div>
-
-        <!-- 洞察行：趋势图 + 薄弱分析 -->
-        <div class="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-2 animate-fade-up stagger-3">
+        <!-- 得分趋势 -->
+        <div class="mb-8 animate-fade-up stagger-2">
           <div class="rounded-2xl border border-border bg-surface-elevated p-5">
             <h3 class="mb-4 text-sm font-semibold text-text-primary">得分趋势</h3>
             <div v-if="stats?.scoreTrend && stats.scoreTrend.length > 0">
@@ -555,39 +346,6 @@ function handleExportBackdropClick(e) {
             <p v-else class="py-10 text-center text-xs text-text-muted">
               完成多次面试后可查看得分趋势
             </p>
-          </div>
-
-          <div class="rounded-2xl border border-border bg-surface-elevated p-5">
-            <h3 class="mb-4 text-sm font-semibold text-text-primary">薄弱项与建议</h3>
-            <template v-if="interviewStore.weakPoints.length">
-              <div class="space-y-2">
-                <div
-                  v-for="wp in interviewStore.weakPoints.slice(0, 6)"
-                  :key="wp.knowledgePoint"
-                  class="flex items-center gap-3 rounded-lg bg-surface p-2.5"
-                >
-                  <div
-                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
-                    :class="getScoreBgSolid(wp.score)"
-                  >
-                    {{ wp.score }}
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <div class="text-sm font-medium text-text-primary truncate">
-                      {{ wp.knowledgePoint }}
-                    </div>
-                  </div>
-                  <span class="shrink-0 text-[11px] font-medium" :class="getScoreColor(wp.score)">{{
-                    getScoreLabel(wp.score)
-                  }}</span>
-                </div>
-              </div>
-            </template>
-            <div v-else class="flex flex-col items-center py-8 text-center">
-              <Icon icon="lucide:check-circle" class="mb-2 h-8 w-8 text-emerald-500/60" />
-              <p class="text-xs text-text-muted">暂无薄弱项</p>
-              <p class="mt-0.5 text-[11px] text-text-muted">完成更多面试以发现知识盲区</p>
-            </div>
           </div>
         </div>
 
@@ -637,271 +395,177 @@ function handleExportBackdropClick(e) {
             </div>
           </div>
 
+          <!-- 空状态 -->
           <div v-if="sortedHistory.length === 0" class="py-10 text-center text-xs text-text-muted">
             暂无面试记录
           </div>
 
-          <div class="space-y-1.5">
-            <div
-              v-for="record in sortedHistory"
-              :key="record.id"
-              class="history-row group flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all duration-200 hover:bg-surface"
-            >
-              <label v-if="isDeleteMode" class="flex shrink-0 cursor-pointer items-center">
-                <input
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-border accent-primary"
-                  :checked="checkedIds.has(record.id)"
-                  @change="toggleCheck(record.id)"
-                />
-              </label>
-
-              <!-- 分数 -->
-              <div
-                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold text-white transition-transform duration-200 group-hover:scale-105"
-                :class="getScoreBgSolid(record.totalScore)"
-              >
-                {{ record.totalScore }}
-              </div>
-
-              <!-- 信息 -->
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-2">
-                  <span class="truncate text-sm font-medium text-text-primary">{{
-                    record.typeLabel || '面试记录'
-                  }}</span>
+          <!-- 双栏布局 -->
+          <div v-else class="overflow-hidden rounded-xl border border-border" style="height: 65vh">
+            <DualPaneLayout left-width="38%">
+              <template #left>
+                <div class="h-full">
+                  <!-- 记录列表 -->
+                  <div class="thin-scrollbar h-full overflow-y-auto">
+                    <button
+                      v-for="record in sortedHistory"
+                      :key="record.id"
+                      type="button"
+                      class="w-full border-b border-border px-3 py-3 text-left transition-colors last:border-b-0"
+                      :class="
+                        selectedRecordId === record.id
+                          ? 'bg-primary/5 border-l-2 border-l-primary'
+                          : 'border-l-2 border-l-transparent hover:bg-surface'
+                      "
+                      @click="selectedRecordId = record.id"
+                    >
+                      <div class="flex items-center gap-3">
+                        <label
+                          v-if="isDeleteMode"
+                          class="flex shrink-0 cursor-pointer items-center"
+                          @click.stop
+                        >
+                          <input
+                            type="checkbox"
+                            class="h-4 w-4 rounded border-border accent-primary"
+                            :checked="checkedIds.has(record.id)"
+                            @change="toggleCheck(record.id)"
+                          />
+                        </label>
+                        <ScoreBadge :score="record.totalScore" size="sm" />
+                        <div class="min-w-0 flex-1">
+                          <div class="truncate text-sm font-medium text-text-primary">
+                            {{ record.typeLabel || '面试记录' }}
+                          </div>
+                          <div class="mt-0.5 flex items-center gap-x-2 text-xs text-text-muted">
+                            <span>{{
+                              new Date(record.finishedAt).toLocaleDateString('zh-CN', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            }}</span>
+                            <span>{{ (record.questions || []).length }} 题</span>
+                          </div>
+                        </div>
+                        <Icon icon="lucide:chevron-right" class="h-4 w-4 text-text-muted" />
+                      </div>
+                    </button>
+                  </div>
                 </div>
+              </template>
+
+              <template #right>
+                <!-- 未选择时的占位 -->
                 <div
-                  class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-text-muted"
+                  v-if="!selectedRecord"
+                  class="flex h-full flex-col items-center justify-center text-text-muted"
                 >
-                  <span>{{
-                    new Date(record.finishedAt).toLocaleDateString('zh-CN', {
-                      month: 'long',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })
-                  }}</span>
-                  <span class="opacity-30 hidden sm:inline">|</span>
-                  <span class="hidden sm:inline">{{ (record.questions || []).length }} 题</span>
-                  <span
-                    class="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                    :class="getScoreColor(record.totalScore)"
-                  >
-                    {{ getScoreLabel(record.totalScore) }}
-                  </span>
+                  <Icon icon="lucide:file-search" class="mb-3 h-10 w-10 opacity-30" />
+                  <p class="text-sm">选择左侧记录查看详情</p>
                 </div>
-              </div>
 
-              <button
-                v-if="!isDeleteMode"
-                type="button"
-                class="shrink-0 rounded-lg px-3 py-1.5 text-xs text-text-muted transition-all duration-200 hover:bg-surface-input hover:text-primary sm:opacity-0 sm:group-hover:opacity-100"
-                @click="openDetail(record)"
-              >
-                详情
-              </button>
-            </div>
+                <!-- 选中记录详情 -->
+                <div v-else class="thin-scrollbar h-full overflow-y-auto p-4 sm:p-5">
+                  <!-- 摘要条 -->
+                  <div class="mb-5 flex items-center gap-4 rounded-xl bg-surface p-4">
+                    <ScoreBadge :score="selectedRecord.totalScore" size="lg" show-label />
+                    <div>
+                      <div class="text-sm font-medium text-text-primary">
+                        {{ selectedRecord.typeLabel || '面试记录' }}
+                      </div>
+                      <div class="text-xs text-text-muted">
+                        {{
+                          new Date(selectedRecord.finishedAt).toLocaleDateString('zh-CN', {
+                            month: 'long',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        }}
+                        &nbsp;·&nbsp;{{ (selectedRecord.questions || []).length }} 题
+                      </div>
+                    </div>
+                    <div class="ml-auto flex items-center gap-1">
+                      <button
+                        type="button"
+                        class="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-surface-input hover:text-primary"
+                        title="导出此记录"
+                        @click="exportRecords([selectedRecord], 'md')"
+                      >
+                        <Icon icon="lucide:download" class="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        class="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-red-500/10 hover:text-red-500"
+                        title="删除此记录"
+                        @click="deleteSelectedRecord"
+                      >
+                        <Icon icon="lucide:trash-2" class="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 分类得分 -->
+                  <div v-if="Object.keys(getCategoryStats(selectedRecord)).length" class="mb-5">
+                    <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                      分类得分
+                    </h4>
+                    <div class="grid grid-cols-3 gap-2">
+                      <div
+                        v-for="(score, cat) in getCategoryStats(selectedRecord)"
+                        :key="cat"
+                        class="rounded-lg border border-border bg-surface-elevated p-3 text-center"
+                      >
+                        <div class="text-xs text-text-muted capitalize">{{ cat }}</div>
+                        <div class="mt-0.5 text-base font-semibold" :class="getScoreColor(score)">
+                          {{ score }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 薄弱分类 -->
+                  <div
+                    v-if="getRecordWeakPoints(selectedRecord).length"
+                    class="mb-5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4"
+                  >
+                    <h4 class="mb-2 text-xs font-semibold text-amber-500">需要加强</h4>
+                    <div class="flex flex-wrap gap-1.5">
+                      <span
+                        v-for="wp in getRecordWeakPoints(selectedRecord)"
+                        :key="wp.knowledgePoint"
+                        class="rounded-full border border-amber-500/20 bg-surface px-2.5 py-0.5 text-xs text-text-secondary"
+                        >{{ wp.knowledgePoint }}（{{ wp.score }} 分）</span
+                      >
+                    </div>
+                  </div>
+
+                  <!-- 题目回顾 -->
+                  <div>
+                    <h4 class="mb-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                      题目回顾
+                    </h4>
+                    <div class="space-y-3">
+                      <QuestionReviewCard
+                        v-for="(q, idx) in selectedRecord.questions || []"
+                        :key="q.id"
+                        :question="q"
+                        :score="selectedRecord.scores[q.id]"
+                        :answer="selectedRecord.answers[q.id]"
+                        :conversations="selectedRecord.conversations[q.id] || []"
+                        :index="idx"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </DualPaneLayout>
           </div>
         </div>
       </template>
     </div>
-
-    <!-- 详情弹窗 -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div
-          v-if="detailRecord"
-          class="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-slate-900/40 backdrop-blur-sm py-10"
-          @click="handleDetailBackdropClick"
-        >
-          <div
-            class="mx-4 my-auto w-full max-w-2xl rounded-2xl border border-border bg-surface-elevated shadow-xl"
-          >
-            <div
-              class="flex items-center justify-between border-b border-border px-4 py-3 sm:px-6 sm:py-4"
-            >
-              <div>
-                <h3 class="text-base font-semibold text-text-primary">
-                  {{ detailRecord.typeLabel || '面试记录' }}
-                </h3>
-                <p class="mt-0.5 text-xs text-text-muted">
-                  {{
-                    new Date(detailRecord.finishedAt).toLocaleDateString('zh-CN', {
-                      month: 'long',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })
-                  }}
-                  &nbsp;·&nbsp;{{ (detailRecord.questions || []).length }} 题
-                </p>
-              </div>
-              <button
-                type="button"
-                class="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-surface-input hover:text-text-primary"
-                @click="closeDetail"
-              >
-                <Icon icon="lucide:x" class="h-5 w-5" />
-              </button>
-            </div>
-
-            <div class="max-h-[70vh] overflow-y-auto px-4 py-4 thin-scrollbar sm:px-6 sm:py-5">
-              <div class="mb-5 flex items-center gap-4 rounded-xl bg-surface p-4">
-                <div
-                  class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-base font-bold text-white"
-                  :class="getScoreBgSolid(detailRecord.totalScore)"
-                >
-                  {{ detailRecord.totalScore }}
-                </div>
-                <div>
-                  <div class="text-sm font-medium text-text-primary">
-                    总分 <span class="text-text-muted">/10</span>
-                  </div>
-                  <div class="text-xs" :class="getScoreColor(detailRecord.totalScore)">
-                    {{ getScoreLabel(detailRecord.totalScore) }}
-                  </div>
-                </div>
-              </div>
-
-              <div v-if="Object.keys(detailCategoryStats(detailRecord)).length" class="mb-5">
-                <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
-                  分类得分
-                </h4>
-                <div class="grid grid-cols-3 gap-2">
-                  <div
-                    v-for="(score, cat) in detailCategoryStats(detailRecord)"
-                    :key="cat"
-                    class="rounded-lg border border-border bg-surface-elevated p-3 text-center"
-                  >
-                    <div class="text-xs text-text-muted capitalize">{{ cat }}</div>
-                    <div class="mt-0.5 text-base font-semibold" :class="getScoreColor(score)">
-                      {{ score }}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div
-                v-if="detailWeakPoints(detailRecord).length"
-                class="mb-5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4"
-              >
-                <h4 class="mb-2 text-xs font-semibold text-amber-500">需要加强</h4>
-                <div class="flex flex-wrap gap-1.5">
-                  <span
-                    v-for="wp in detailWeakPoints(detailRecord)"
-                    :key="wp.knowledgePoint"
-                    class="rounded-full border border-amber-500/20 bg-surface px-2.5 py-0.5 text-xs text-text-secondary"
-                    >{{ wp.knowledgePoint }}（{{ wp.score }} 分）</span
-                  >
-                </div>
-              </div>
-
-              <div>
-                <h4 class="mb-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
-                  题目回顾
-                </h4>
-                <div class="space-y-3">
-                  <div
-                    v-for="(q, idx) in detailRecord.questions || []"
-                    :key="q.id"
-                    class="rounded-xl border border-border bg-surface p-4"
-                  >
-                    <div class="mb-2 flex flex-wrap items-center gap-2">
-                      <span class="text-xs font-medium text-text-muted">Q{{ idx + 1 }}</span>
-                      <span
-                        class="rounded-full px-2 py-0.5 text-[11px] font-medium"
-                        :class="difficultyColor[q.difficulty] || 'bg-surface-input text-text-muted'"
-                        >{{ difficultyMap[q.difficulty] || q.difficulty }}</span
-                      >
-                      <span
-                        v-for="tag in q.tags || []"
-                        :key="tag"
-                        class="rounded-full bg-surface-input px-2 py-0.5 text-[11px] text-text-muted"
-                        >{{ tag }}</span
-                      >
-                      <span
-                        class="ml-auto text-sm font-semibold"
-                        :class="getScoreColor((detailRecord.scores[q.id] || {}).score || 0)"
-                      >
-                        {{ (detailRecord.scores[q.id] || {}).score ?? '-' }}/10
-                      </span>
-                    </div>
-                    <p class="text-sm text-text-primary leading-relaxed">{{ q.question }}</p>
-
-                    <!-- 多轮对话记录 -->
-                    <div
-                      v-if="(detailRecord.conversations[q.id] || []).length > 0"
-                      class="mt-3 space-y-2"
-                    >
-                      <div class="mb-1.5 text-[11px] font-medium text-text-muted">对话记录</div>
-                      <div
-                        v-for="(msg, mi) in detailRecord.conversations[q.id]"
-                        :key="mi"
-                        class="flex"
-                        :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
-                      >
-                        <div
-                          class="max-w-[85%] rounded-xl px-3 py-2 text-sm leading-relaxed"
-                          :class="
-                            msg.role === 'user'
-                              ? 'bg-primary/10 text-text-primary'
-                              : 'bg-surface-input text-text-secondary'
-                          "
-                        >
-                          <span
-                            class="text-xs font-medium"
-                            :class="msg.role === 'user' ? 'text-primary' : 'text-text-muted'"
-                          >
-                            {{
-                              msg.role === 'user'
-                                ? '你'
-                                : `AI 追问 (第${Math.ceil((mi + 1) / 2)}轮)`
-                            }}
-                          </span>
-                          <p class="mt-0.5 whitespace-pre-wrap">{{ msg.content }}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- 普通模式的回答（无追问对话时使用） -->
-                    <div
-                      v-else-if="detailRecord.answers[q.id]"
-                      class="mt-3 rounded-lg bg-surface-input px-4 py-3"
-                    >
-                      <div class="mb-1.5 text-[11px] font-medium text-text-muted">你的回答</div>
-                      <p class="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">
-                        {{ detailRecord.answers[q.id] }}
-                      </p>
-                    </div>
-
-                    <div
-                      v-if="(detailRecord.scores[q.id] || {}).feedback"
-                      class="mt-3 flex items-start gap-1.5 text-xs text-text-muted"
-                    >
-                      <Icon icon="lucide:message-circle" class="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      <span class="leading-relaxed">{{
-                        (detailRecord.scores[q.id] || {}).feedback
-                      }}</span>
-                    </div>
-
-                    <div
-                      v-if="(detailRecord.scores[q.id] || {}).improvedAnswer"
-                      class="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-4 py-3"
-                    >
-                      <div class="mb-1.5 text-[11px] font-medium text-emerald-500">参考回答</div>
-                      <p class="text-sm text-text-secondary leading-relaxed">
-                        {{ (detailRecord.scores[q.id] || {}).improvedAnswer }}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
 
     <!-- 删除确认弹窗 -->
     <Modal

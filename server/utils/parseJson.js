@@ -41,4 +41,99 @@ function extractJson(raw) {
   return jsonStr
 }
 
-module.exports = { extractJson }
+/**
+ * 修复 AI 返回的常见 JSON 格式问题
+ * 1. 字符串内未转义的换行符 → \\n
+ * 2. 未转义的双引号 → \\"
+ * 3. 缺失的闭合括号
+ */
+function repairJson(str) {
+  let repaired = str
+
+  // 在 JSON 字符串上下文中修复未转义的换行符（在双引号范围内）
+  repaired = fixUnescapedChars(repaired)
+
+  // 修复截断：如果最后一个未闭合的是字符串值，补上引号
+  repaired = fixTruncatedString(repaired)
+
+  // 补齐缺失的闭合括号/方括号
+  const openBraces = (repaired.match(/(?<!\\){/g) || []).length
+  const closeBraces = (repaired.match(/(?<!\\)}/g) || []).length
+  const openBrackets = (repaired.match(/(?<!\\)\[/g) || []).length
+  const closeBrackets = (repaired.match(/(?<!\\)\]/g) || []).length
+
+  for (let i = openBraces; i > closeBraces; i--) repaired += "}"
+  for (let i = openBrackets; i > closeBrackets; i--) repaired += "]"
+
+  return repaired
+}
+
+/**
+ * 修复因 AI 输出被截断导致的未闭合字符串
+ * 如果 JSON 末尾正处在一个打开的字符串内 → 补上闭合引号 + "...(截断)"
+ */
+function fixTruncatedString(str) {
+  let inString = false
+  let escaped = false
+
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i]
+    if (escaped) { escaped = false; continue }
+    if (ch === '\\') { escaped = true; continue }
+    if (ch === '"') { inString = !inString }
+  }
+
+  // 如果遍历结束时 inString 为 true，说明字符串没有闭合
+  if (inString) {
+    return str + '(截断)"'
+  }
+  return str
+}
+
+/**
+ * 修复 JSON 字符串中未转义的换行符
+ * 在 JSON 字符串值内，真实的换行符必须转义为 \\n
+ */
+function fixUnescapedChars(str) {
+  const result = []
+  let inString = false
+  let escaped = false
+
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i]
+
+    if (escaped) {
+      result.push(ch)
+      escaped = false
+      continue
+    }
+
+    if (ch === "\\") {
+      result.push(ch)
+      escaped = true
+      continue
+    }
+
+    if (ch === '"') {
+      inString = !inString
+      result.push(ch)
+      continue
+    }
+
+    // 在 JSON 字符串值内部，真实的换行符需要转义
+    if (inString && ch === "\n") {
+      result.push("\\n")
+      continue
+    }
+    if (inString && ch === "\r") {
+      result.push("\\r")
+      continue
+    }
+
+    result.push(ch)
+  }
+
+  return result.join("")
+}
+
+module.exports = { extractJson, repairJson }

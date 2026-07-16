@@ -48,6 +48,7 @@ async function agentLoop({
       messages: currentMessages,
       tools,
       tool_choice: 'auto',
+      max_tokens: 2000,
     })
 
     const msg = response.choices[0].message
@@ -90,6 +91,7 @@ async function agentLoop({
       ...currentMessages,
       { role: 'user', content: '请基于以上工具调用结果，用中文给出最终回答。' },
     ],
+    max_tokens: 2000,
   })
   return { text: finalResp.choices[0].message.content || '', steps }
 }

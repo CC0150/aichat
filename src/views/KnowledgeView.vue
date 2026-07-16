@@ -18,6 +18,35 @@ const viewMode = ref('list')
 /** 当前查看详情的知识库 ID */
 const detailKbId = ref(null)
 
+// 内联编辑
+/** 是否处于编辑名称/描述模式 */
+const isEditing = ref(false)
+/** 编辑中的名称 */
+const editName = ref('')
+/** 编辑中的描述 */
+const editDescription = ref('')
+
+/** 进入编辑模式 */
+function startEdit() {
+  editName.value = store.currentKB?.name || ''
+  editDescription.value = store.currentKB?.description || ''
+  isEditing.value = true
+}
+
+/** 保存编辑 */
+async function saveEdit() {
+  if (!editName.value.trim()) return
+  try {
+    await store.updateKB(detailKbId.value, {
+      name: editName.value.trim(),
+      description: editDescription.value.trim(),
+    })
+    isEditing.value = false
+  } catch (e) {
+    // store 已处理错误
+  }
+}
+
 // 创建 KB modal
 /** 创建知识库弹窗是否可见 */
 const showCreateModal = ref(false)
@@ -67,11 +96,12 @@ function confirmDeleteKB(kb) {
   showDeleteModal.value = true
 }
 
-const isReindexing = ref(false)
+/** 正在索引中的 KB ID 集合（允许多个 KB 同时索引） */
+const reindexingIds = ref(new Set())
 /** 重新索引知识库 */
 async function handleReindex(kb) {
-  if (isReindexing.value) return
-  isReindexing.value = true
+  if (reindexingIds.value.has(kb.id)) return
+  reindexingIds.value.add(kb.id)
   try {
     const result = await reindexKB(kb.id)
     const files = result.files ?? 0
@@ -80,7 +110,7 @@ async function handleReindex(kb) {
   } catch (e) {
     showToast('索引失败：' + (e.message || '未知错误'), 'error')
   } finally {
-    isReindexing.value = false
+    reindexingIds.value.delete(kb.id)
   }
 }
 
@@ -111,6 +141,7 @@ function openDetail(kbId) {
 function backToList() {
   viewMode.value = 'list'
   detailKbId.value = null
+  isEditing.value = false
   store.clearCurrent()
 }
 
@@ -183,7 +214,10 @@ function formatFileSize(charCount) {
         class="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium shadow-lg"
         :class="toastType === 'error' ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'"
       >
-        <Icon :icon="toastType === 'error' ? 'lucide:alert-circle' : 'lucide:check-circle'" class="h-4 w-4" />
+        <Icon
+          :icon="toastType === 'error' ? 'lucide:alert-circle' : 'lucide:check-circle'"
+          class="h-4 w-4"
+        />
         {{ toast }}
       </div>
     </Transition>
@@ -279,10 +313,13 @@ function formatFileSize(charCount) {
                     type="button"
                     class="rounded-lg p-2 text-text-muted transition-colors hover:bg-primary/10 hover:text-primary sm:p-1.5"
                     title="重新索引（重新切块+向量化）"
-                    :disabled="isReindexing"
+                    :disabled="reindexingIds.has(kb.id)"
                     @click.stop="handleReindex(kb)"
                   >
-                    <Icon :icon="isReindexing ? 'lucide:loader-2' : 'lucide:refresh-cw'" :class="['h-4 w-4', isReindexing ? 'animate-spin' : '']" />
+                    <Icon
+                      :icon="reindexingIds.has(kb.id) ? 'lucide:loader-2' : 'lucide:refresh-cw'"
+                      :class="['h-4 w-4', reindexingIds.has(kb.id) ? 'animate-spin' : '']"
+                    />
                   </button>
                   <button
                     type="button"
@@ -310,14 +347,64 @@ function formatFileSize(charCount) {
               <Icon icon="lucide:arrow-left" class="h-5 w-5" />
             </button>
             <div class="flex-1 min-w-0">
-              <h1 class="text-base sm:text-lg font-semibold text-text-primary truncate">
-                {{ store.currentKB.name }}
-              </h1>
-              <p v-if="store.currentKB.description" class="text-xs text-text-muted truncate">
-                {{ store.currentKB.description }}
-              </p>
+              <template v-if="isEditing">
+                <input
+                  v-model="editName"
+                  type="text"
+                  class="w-full rounded-lg border border-border bg-surface-input px-2.5 py-1.5 text-sm font-semibold text-text-primary focus:border-primary focus:outline-none"
+                  maxlength="100"
+                  @keydown.enter="saveEdit"
+                  @keydown.escape="isEditing = false"
+                />
+                <input
+                  v-model="editDescription"
+                  type="text"
+                  class="mt-1.5 w-full rounded-lg border border-border bg-surface-input px-2.5 py-1.5 text-xs text-text-secondary focus:border-primary focus:outline-none"
+                  maxlength="500"
+                  placeholder="描述（可选）"
+                  @keydown.enter="saveEdit"
+                  @keydown.escape="isEditing = false"
+                />
+              </template>
+              <template v-else>
+                <h1 class="text-base sm:text-lg font-semibold text-text-primary truncate">
+                  {{ store.currentKB.name }}
+                </h1>
+                <p v-if="store.currentKB.description" class="text-xs text-text-muted truncate">
+                  {{ store.currentKB.description }}
+                </p>
+              </template>
             </div>
+            <template v-if="isEditing">
+              <button
+                type="button"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-emerald-500 transition-colors hover:bg-emerald-500/10"
+                title="保存"
+                @click="saveEdit"
+              >
+                <Icon icon="lucide:check" class="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-input"
+                title="取消"
+                @click="isEditing = false"
+              >
+                <Icon icon="lucide:x" class="h-4 w-4" />
+              </button>
+            </template>
+            <template v-else>
+              <button
+                type="button"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-input hover:text-text-primary"
+                title="编辑名称"
+                @click="startEdit"
+              >
+                <Icon icon="lucide:pencil" class="h-4 w-4" />
+              </button>
+            </template>
             <button
+              v-if="!isEditing"
               type="button"
               class="inline-flex shrink-0 items-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-white transition-all duration-200 hover:bg-primary/90 sm:px-4"
               @click="triggerUpload"
@@ -351,6 +438,14 @@ function formatFileSize(charCount) {
             class="mb-4 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-500"
           >
             {{ uploadError }}
+          </div>
+
+          <!-- Store 错误 -->
+          <div
+            v-if="store.error"
+            class="mb-4 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-500"
+          >
+            {{ store.error }}
           </div>
 
           <!-- 空文件状态 -->

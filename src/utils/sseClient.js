@@ -71,7 +71,9 @@ export async function requestSSEStream(url, body, { onChunk, onError, signal } =
       const data = line.slice(5).trimStart()
 
       if (data === '[DONE]') {
-        try { await reader.cancel() } catch (_) {}
+        try {
+          await reader.cancel()
+        } catch (_) {}
         return
       }
 

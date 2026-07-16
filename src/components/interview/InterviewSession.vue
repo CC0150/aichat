@@ -5,6 +5,8 @@ import { useInterviewStore } from '@/stores/interview'
 import { useAppStore } from '@/stores/app'
 import { requestScore, requestEvaluate, requestAgentEvaluate } from '@/utils/interviewApi'
 import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
+import QuestionReviewCard from './QuestionReviewCard.vue'
+import ScoreBadge from './ScoreBadge.vue'
 
 const emit = defineEmits(['quit'])
 /** 面试状态（题目、答案、分数、阶段等） */
@@ -39,6 +41,9 @@ const useDeepMode = ref(true)
 
 /** 最多追问轮数 */
 const MAX_FOLLOW_UP_ROUNDS = 3
+
+/** 难度中文标签 */
+const DIFFICULTY_LABELS = { easy: '简单', medium: '中等', hard: '困难' }
 
 /**
  * 当前题目的对话轮次（追问次数）
@@ -174,6 +179,42 @@ function getQuestionStatus(index) {
 }
 
 /**
+ * 调用评估 API（Agent 或普通模式）并处理返回结果
+ * 提取自 handleSubmit 和 retryScore 的重复逻辑
+ */
+async function evaluateCurrentQuestion() {
+  const q = interviewStore.currentQuestion
+  const conversationHistory = interviewStore.conversations[q.id] || []
+  const hasKB = !!interviewStore.kbId
+  const result = hasKB
+    ? await requestAgentEvaluate({
+        question: q.question,
+        answerPoints: q.answerPoints,
+        conversationHistory,
+        kbId: interviewStore.kbId,
+        model: appStore.currentModelId,
+      })
+    : await requestEvaluate({
+        question: q.question,
+        answerPoints: q.answerPoints,
+        conversationHistory,
+        model: appStore.currentModelId,
+      })
+
+  const action = interviewStore.handleEvaluateResult(q.id, result)
+  agentSteps.value = result.agentSteps?.length ? result.agentSteps : []
+  if (action === 'follow_up') {
+    followUpQuestion.value = result.followUpQuestion
+    currentRound.value++
+    userAnswer.value = ''
+    codeAnswer.value = ''
+  } else {
+    followUpQuestion.value = ''
+    currentRound.value = 0
+  }
+}
+
+/**
  * 提交答案的核心逻辑
  * 支持两种模式：
  * - 深度追问模式（useDeepMode）：发送给 /api/interview/evaluate，AI 可能返回 follow_up（继续追问）或 complete（完成评分）
@@ -207,46 +248,11 @@ async function handleSubmit() {
     scoreError.value = ''
 
     try {
-      const conversationHistory = interviewStore.conversations[q.id] || []
-      // 有知识库时用 Agent 评估（自动搜索 KB + 评分 + 追问决策）
-      const hasKB = !!interviewStore.kbId
-      const result = hasKB
-        ? await requestAgentEvaluate({
-            question: q.question,
-            answerPoints: q.answerPoints,
-            conversationHistory,
-            kbId: interviewStore.kbId,
-            model: appStore.currentModelId,
-          })
-        : await requestEvaluate({
-            question: q.question,
-            answerPoints: q.answerPoints,
-            conversationHistory,
-            model: appStore.currentModelId,
-          })
-
-      const action = interviewStore.handleEvaluateResult(q.id, result)
-
-      // 存储 Agent 步骤以展示"Agent 做了什么"
-      if (result.agentSteps?.length) agentSteps.value = result.agentSteps
-      else agentSteps.value = []
-
-      if (action === 'follow_up') {
-        // AI 决定继续追问 → 显示追问问题，保留当前答案输入区
-        followUpQuestion.value = result.followUpQuestion
-        currentRound.value++
-        userAnswer.value = ''
-        codeAnswer.value = ''
-      } else {
-        // AI 判定完成 → 清除追问状态
-        followUpQuestion.value = ''
-        currentRound.value = 0
-      }
+      await evaluateCurrentQuestion()
       delete draftAnswers[q.id]
     } catch (err) {
       scoreError.value = err.message || '评估失败'
-      interviewStore.phase = 'answering' // 回到答题状态，允许重试
-      // 不自动保存默认分，让用户选择重试或手动跳过
+      interviewStore.phase = 'answering'
     } finally {
       isScoring.value = false
     }
@@ -273,7 +279,6 @@ async function handleSubmit() {
   }
 }
 
-/** 进入下一题：重置输入状态并推进到下一题 */
 /** 重新评分（评估失败时调用） */
 async function retryScore() {
   const q = interviewStore.currentQuestion
@@ -283,35 +288,7 @@ async function retryScore() {
   isScoring.value = true
 
   try {
-    const conversationHistory = interviewStore.conversations[q.id] || []
-    const hasKB = !!interviewStore.kbId
-    const result = hasKB
-      ? await requestAgentEvaluate({
-          question: q.question,
-          answerPoints: q.answerPoints,
-          conversationHistory,
-          kbId: interviewStore.kbId,
-          model: appStore.currentModelId,
-        })
-      : await requestEvaluate({
-          question: q.question,
-          answerPoints: q.answerPoints,
-          conversationHistory,
-          model: appStore.currentModelId,
-        })
-
-    const action = interviewStore.handleEvaluateResult(q.id, result)
-    if (result.agentSteps?.length) agentSteps.value = result.agentSteps
-    else agentSteps.value = []
-    if (action === 'follow_up') {
-      followUpQuestion.value = result.followUpQuestion
-      currentRound.value++
-      userAnswer.value = ''
-      codeAnswer.value = ''
-    } else {
-      followUpQuestion.value = ''
-      currentRound.value = 0
-    }
+    await evaluateCurrentQuestion()
   } catch (err) {
     scoreError.value = err.message || '重试失败'
     interviewStore.phase = 'answering'
@@ -483,13 +460,7 @@ onUnmounted(() => {
               'bg-red-500/10 text-red-500': interviewStore.currentQuestion?.difficulty === 'hard',
             }"
           >
-            {{
-              interviewStore.currentQuestion?.difficulty === 'easy'
-                ? '简单'
-                : interviewStore.currentQuestion?.difficulty === 'medium'
-                  ? '中等'
-                  : '困难'
-            }}
+            {{ DIFFICULTY_LABELS[interviewStore.currentQuestion?.difficulty] || '困难' }}
           </span>
           <span
             v-for="tag in interviewStore.currentQuestion?.tags"
@@ -525,9 +496,7 @@ onUnmounted(() => {
                 :class="msg.role === 'user' ? 'text-primary' : 'text-text-muted'"
               >
                 <Icon :icon="msg.role === 'user' ? 'lucide:user' : 'lucide:bot'" class="h-3 w-3" />
-                <span>{{
-                  msg.role === 'user' ? '你的回答' : `AI 追问 (第${Math.ceil((mi + 1) / 2)}轮)`
-                }}</span>
+                <span>{{ msg.role === 'user' ? '你的回答' : 'AI 追问' }}</span>
               </div>
               <p>{{ msg.content }}</p>
             </div>
@@ -595,9 +564,7 @@ onUnmounted(() => {
         >
           <Icon icon="lucide:sparkles" class="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
           <div class="text-sm">
-            <span class="font-medium text-amber-500"
-              >AI 追问（第 {{ currentRound }}/{{ MAX_FOLLOW_UP_ROUNDS }} 轮）</span
-            >
+            <span class="font-medium text-amber-500">AI 追问（第 {{ currentRound }} 轮）</span>
             <p class="mt-1 text-text-secondary">{{ followUpQuestion }}</p>
           </div>
         </div>
@@ -713,9 +680,7 @@ onUnmounted(() => {
                 v-if="isScoring"
                 class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
               />
-              <span v-else-if="currentRound > 0"
-                >补充回答（第 {{ currentRound }}/{{ MAX_FOLLOW_UP_ROUNDS }} 轮）</span
-              >
+              <span v-else-if="currentRound > 0">补充回答（第 {{ currentRound }} 轮）</span>
               <span v-else>提交回答</span>
             </button>
           </div>
@@ -758,118 +723,42 @@ onUnmounted(() => {
 
         <!-- 评分反馈 -->
         <div v-if="interviewStore.phase === 'feedback'" class="space-y-4 animate-fade-in">
-          <!-- 对话回顾 -->
-          <div
-            v-if="interviewStore.currentConversation.length > 0"
-            class="rounded-2xl border border-border bg-surface-elevated p-4"
-          >
-            <h3 class="mb-3 text-sm font-semibold text-text-primary">对话回顾</h3>
-            <div class="space-y-2.5">
-              <div
-                v-for="(msg, mi) in interviewStore.currentConversation"
-                :key="mi"
-                class="flex"
-                :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
-              >
-                <div
-                  class="max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed"
-                  :class="
-                    msg.role === 'user'
-                      ? 'bg-primary/10 text-text-primary'
-                      : 'bg-surface-input text-text-secondary'
-                  "
-                >
-                  <span class="font-medium">{{ msg.role === 'user' ? '你' : 'AI' }}</span>
-                  <p class="mt-0.5">{{ msg.content }}</p>
-                </div>
-              </div>
-            </div>
+          <!-- 已答题快速导航 -->
+          <div class="flex items-center gap-1.5 overflow-x-auto thin-scrollbar pb-1">
+            <button
+              v-for="(q, idx) in interviewStore.questions"
+              :key="q.id"
+              type="button"
+              class="flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors"
+              :class="
+                idx === interviewStore.currentIndex
+                  ? 'bg-primary/10 text-primary'
+                  : interviewStore.scores[q.id]
+                    ? 'bg-surface-input text-text-muted hover:text-text-secondary'
+                    : 'bg-surface-input text-text-muted'
+              "
+              :disabled="idx === interviewStore.currentIndex"
+              @click="handleGoToQuestion(idx)"
+            >
+              <span>Q{{ idx + 1 }}</span>
+              <ScoreBadge
+                v-if="interviewStore.scores[q.id]"
+                :score="interviewStore.scores[q.id].score"
+                size="sm"
+              />
+            </button>
           </div>
 
-          <!-- 评分卡片 -->
-          <div class="rounded-2xl border border-border bg-surface-elevated p-4 sm:p-5">
-            <h3 class="mb-4 text-sm font-semibold text-text-primary">评分结果</h3>
-            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div class="text-center">
-                <div class="text-2xl font-bold text-primary">
-                  <template
-                    v-if="interviewStore.scores[interviewStore.currentQuestion?.id]?.score != null"
-                  >
-                    {{ interviewStore.scores[interviewStore.currentQuestion?.id]?.score
-                    }}<span class="text-sm font-normal text-text-muted">/10</span>
-                  </template>
-                  <template v-else>-</template>
-                </div>
-                <div class="mt-1 text-xs text-text-muted">总分</div>
-              </div>
-              <div class="text-center">
-                <div class="text-lg font-semibold text-text-primary">
-                  <template
-                    v-if="
-                      interviewStore.scores[interviewStore.currentQuestion?.id]?.correctness != null
-                    "
-                  >
-                    {{ interviewStore.scores[interviewStore.currentQuestion?.id]?.correctness
-                    }}<span class="text-xs font-normal text-text-muted">/10</span>
-                  </template>
-                  <template v-else>-</template>
-                </div>
-                <div class="mt-1 text-xs text-text-muted">正确性</div>
-              </div>
-              <div class="text-center">
-                <div class="text-lg font-semibold text-text-primary">
-                  <template
-                    v-if="
-                      interviewStore.scores[interviewStore.currentQuestion?.id]?.completeness !=
-                      null
-                    "
-                  >
-                    {{ interviewStore.scores[interviewStore.currentQuestion?.id]?.completeness
-                    }}<span class="text-xs font-normal text-text-muted">/10</span>
-                  </template>
-                  <template v-else>-</template>
-                </div>
-                <div class="mt-1 text-xs text-text-muted">完整性</div>
-              </div>
-              <div class="text-center">
-                <div class="text-lg font-semibold text-text-primary">
-                  <template
-                    v-if="
-                      interviewStore.scores[interviewStore.currentQuestion?.id]?.clarity != null
-                    "
-                  >
-                    {{ interviewStore.scores[interviewStore.currentQuestion?.id]?.clarity
-                    }}<span class="text-xs font-normal text-text-muted">/10</span>
-                  </template>
-                  <template v-else>-</template>
-                </div>
-                <div class="mt-1 text-xs text-text-muted">清晰度</div>
-              </div>
-            </div>
-          </div>
+          <!-- 题目回顾卡片 -->
+          <QuestionReviewCard
+            :question="interviewStore.currentQuestion"
+            :score="interviewStore.scores[interviewStore.currentQuestion?.id]"
+            :answer="interviewStore.answers[interviewStore.currentQuestion?.id]"
+            :conversations="interviewStore.currentConversation"
+            :index="interviewStore.currentIndex"
+          />
 
-          <!-- AI 评价 -->
-          <div
-            v-if="interviewStore.scores[interviewStore.currentQuestion?.id]?.feedback"
-            class="rounded-2xl border border-border bg-surface-elevated p-5"
-          >
-            <h3 class="mb-2 text-sm font-semibold text-text-primary">AI 点评</h3>
-            <p class="text-sm leading-relaxed text-text-secondary">
-              {{ interviewStore.scores[interviewStore.currentQuestion?.id]?.feedback }}
-            </p>
-          </div>
-
-          <!-- 参考答案 -->
-          <div
-            v-if="interviewStore.scores[interviewStore.currentQuestion?.id]?.improvedAnswer"
-            class="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5"
-          >
-            <h3 class="mb-2 text-sm font-semibold text-emerald-500">参考回答</h3>
-            <p class="text-sm leading-relaxed text-text-secondary">
-              {{ interviewStore.scores[interviewStore.currentQuestion?.id]?.improvedAnswer }}
-            </p>
-          </div>
-
+          <!-- 评分错误 -->
           <div
             v-if="scoreError"
             class="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-500"
@@ -877,6 +766,7 @@ onUnmounted(() => {
             {{ scoreError }}
           </div>
 
+          <!-- 下一题 / 查看结果 -->
           <div class="flex justify-end pt-2">
             <button
               type="button"

@@ -1,4 +1,4 @@
-const { extractJson } = require("../utils/parseJson")
+const { extractJson, repairJson } = require("../utils/parseJson")
 
 /**
  * 调用 AI 并解析 JSON 返回（非流式）
@@ -15,7 +15,20 @@ async function callAI({ model, prompt, temperature = 0.5, maxTokens = 2000, logT
   })
   const raw = response.choices[0]?.message?.content || ""
   console.log(`[${logTag}] AI 原始返回:`, raw.slice(0, 200))
-  return JSON.parse(extractJson(raw))
+
+  const extracted = extractJson(raw)
+  try {
+    return JSON.parse(extracted)
+  } catch (firstError) {
+    console.warn(`[${logTag}] 首次 JSON 解析失败，尝试修复...`)
+    const repaired = repairJson(extracted)
+    try {
+      return JSON.parse(repaired)
+    } catch {
+      console.error(`[${logTag}] 修复后仍无法解析，原始内容:`, extracted.slice(0, 300))
+      throw firstError
+    }
+  }
 }
 
 module.exports = { callAI }

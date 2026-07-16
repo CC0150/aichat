@@ -25,14 +25,19 @@ const VECTOR_DIM = 1024
 
 // ===== 内部 =====
 
+/**
+ * 获取或创建 LanceDB 数据库实例（单例缓存）
+ * @returns {Promise<import('@lancedb/lancedb').Connection>}
+ */
 async function getDB() {
   if (!db) db = await lancedb.connect(DB_PATH)
   return db
 }
 
 /**
- * Arrow Schema —— 显式定义每列的名称和类型
- * 比「塞一条占位数据 → 推断 schema → 删占位行」的标准很多
+ * Arrow Schema 定义 — 显式指定每列的名称和类型
+ * 比「塞一条占位数据 → 推断 schema → 删占位行」更可控
+ * @returns {import('apache-arrow').Schema}
  */
 function getSchema() {
   return new arrow.Schema([
@@ -49,6 +54,7 @@ function getSchema() {
 /**
  * 初始化或获取 chunks 表
  * 首次调用时用 Arrow schema 创建空表，后续直接打开
+ * @returns {Promise<import('@lancedb/lancedb').Table>}
  */
 async function getTable() {
   if (table) return table
