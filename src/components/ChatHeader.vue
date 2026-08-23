@@ -33,7 +33,7 @@ function handleRenameClick() {
 
 <template>
   <header
-    class="relative flex min-h-[58px] shrink-0 items-center justify-between gap-2 border-b border-border bg-background/70 px-4 backdrop-blur-md sm:px-6"
+    class="relative flex min-h-[58px] shrink-0 items-center justify-between gap-2 bg-background/70 px-4 backdrop-blur-md sm:px-6"
   >
     <div class="flex min-w-0 flex-1 items-center gap-3">
       <span class="truncate font-display text-[15px] font-normal tracking-wide text-text-primary">{{

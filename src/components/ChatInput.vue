@@ -655,9 +655,9 @@ defineExpose({ sendMessage, continueGeneration })
 </script>
 
 <template>
-  <div class="shrink-0 border-t border-border bg-background/80 backdrop-blur-md p-2 sm:p-4">
+  <div class="shrink-0 bg-background/80 p-2 backdrop-blur-md sm:p-4">
     <div
-      class="mx-auto flex max-w-3xl flex-col gap-2 rounded-2xl border border-border bg-surface-elevated/80 px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm transition-all duration-200 focus-within:border-primary/50 focus-within:shadow-md focus-within:ring-2 focus-within:ring-primary/10"
+      class="mx-auto flex max-w-3xl flex-col gap-2 rounded-2xl border border-text-muted/45 bg-surface-elevated/80 px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm transition-all duration-200 focus-within:border-text-muted/70 focus-within:shadow-md focus-within:ring-2 focus-within:ring-primary/10"
     >
       <!-- Attachments -->
       <div v-if="isParsingAttachment || attachments.length" class="flex flex-col gap-2">
@@ -719,7 +719,7 @@ defineExpose({ sendMessage, continueGeneration })
           v-model="input"
           class="min-h-[50px] w-full resize-none bg-transparent py-1 pr-8 text-[15px] leading-relaxed text-text-primary placeholder:text-text-muted focus:outline-none transition-[height] duration-150 ease-out"
           rows="1"
-          placeholder="向面试书房提问……"
+          placeholder="向 Intervy 提问……"
           aria-label="输入消息"
           @keydown.enter="onEnterKey"
           @input="onInput"

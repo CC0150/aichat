@@ -1,24 +1,24 @@
 /**
- * Theme — 墨与朱 · Ink & Vermilion
- * 温墨底 / 宣纸面的暖调编辑风格，朱砂红单点强调。
- * 像一间深夜的书房：纸白正文、衬线大标题、细线分隔、颗粒噪点。
+ * Theme — 青砚 · Cool Inkstone
+ * 冷灰底 + 冰青强调的爽利编辑风格。
+ * 像一间寒夜砚斋：霜白正文、衬线大标题、细线分隔、颗粒噪点。
  */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  /* Light — 宣纸 */
-  --color-background: #f4eddf;
-  --color-surface: #ece2cf;
-  --color-surface-elevated: #fbf6ea;
-  --color-surface-input: #e0d4bc;
-  --color-primary: #c23d22;
-  --color-primary-muted: rgba(194, 61, 34, 0.12);
-  --color-border: #d7c8ac;
-  --color-text-primary: #271f14;
-  --color-text-secondary: #5f5340;
-  --color-text-muted: #a2927a;
+  /* Light — 霜雪 */
+  --color-background: #eef3f6;
+  --color-surface: #e3ebf0;
+  --color-surface-elevated: #fafcfd;
+  --color-surface-input: #d6e2e9;
+  --color-primary: #0f8279;
+  --color-primary-muted: rgba(15, 130, 121, 0.12);
+  --color-border: #c3d1da;
+  --color-text-primary: #16222d;
+  --color-text-secondary: #40505e;
+  --color-text-muted: #899eae;
 
   /* 字体 */
   --font-sans: 'Noto Sans SC', 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei UI',
@@ -32,17 +32,17 @@
 
 .dark,
 html.dark {
-  /* Dark — 温墨 */
-  --color-background: #16120d;
-  --color-surface: #1f1913;
-  --color-surface-elevated: #2b231a;
-  --color-surface-input: #3a2f22;
-  --color-primary: #e25a3a;
-  --color-primary-muted: rgba(226, 90, 58, 0.17);
-  --color-border: #43372a;
-  --color-text-primary: #f4ead9;
-  --color-text-secondary: #d0bfa5;
-  --color-text-muted: #97866d;
+  /* Dark — 寒绛 */
+  --color-background: #0e141b;
+  --color-surface: #161e27;
+  --color-surface-elevated: #202b37;
+  --color-surface-input: #2c3a49;
+  --color-primary: #3fb8b0;
+  --color-primary-muted: rgba(63, 184, 176, 0.16);
+  --color-border: #33434f;
+  --color-text-primary: #e7eef4;
+  --color-text-secondary: #a9bac8;
+  --color-text-muted: #76899c;
 }
 
 /* Base */
@@ -84,7 +84,7 @@ body::after {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background: radial-gradient(120% 60% at 50% -10%, rgba(255, 200, 140, 0.05), transparent 60%);
+  background: radial-gradient(120% 60% at 50% -10%, rgba(120, 190, 220, 0.06), transparent 60%);
 }
 
 /* 交界处墨色更暖的选段、焦点 */

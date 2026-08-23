@@ -41,7 +41,7 @@ defineProps({
     <span
       v-if="showText"
       class="truncate font-display text-[17px] font-light italic tracking-tight"
-      :class="light ? 'text-[#f4ead9]' : 'text-text-primary'"
+      :class="light ? 'text-[#e7eef4]' : 'text-text-primary'"
       >Intervy<span class="not-italic font-normal text-primary">·</span></span
     >
   </div>

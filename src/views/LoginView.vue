@@ -16,7 +16,7 @@ const confirmPassword = ref('')
 
 const title = computed(() => (mode.value === 'login' ? '登录' : '注册'))
 const submitText = computed(() =>
-  auth.loading ? '请稍候...' : mode.value === 'login' ? '进入书房' : '记录并进入',
+  auth.loading ? '请稍候...' : mode.value === 'login' ? '进入 Intervy' : '注册并进入',
 )
 
 function switchMode(m: 'login' | 'register'): void {
@@ -50,13 +50,13 @@ async function submit(): Promise<void> {
   <div
     class="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-12"
   >
-    <!-- 气氛：朱砂微光 -->
+    <!-- 气氛：冰青微光 -->
     <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
       <div
         class="absolute left-1/2 top-[-20%] h-[420px] w-[520px] -translate-x-1/2 rounded-full bg-primary/[0.07] blur-3xl glow-breathe"
       />
       <div
-        class="absolute bottom-[-15%] left-[8%] h-[320px] w-[320px] rounded-full bg-[#f0a860]/[0.06] blur-3xl glow-breathe"
+        class="absolute bottom-[-15%] left-[8%] h-[320px] w-[320px] rounded-full bg-[#5aa9d9]/[0.07] blur-3xl glow-breathe"
         style="animation-delay: -4.5s"
       />
     </div>
@@ -66,10 +66,10 @@ async function submit(): Promise<void> {
       <div class="mb-9 flex flex-col items-center text-center">
         <Logo :size="66" />
         <h1 class="mt-6 font-display text-3xl font-light tracking-[0.12em] text-text-primary">
-          面试书房
+          Intervy
         </h1>
         <p class="mt-2 font-display text-sm italic tracking-[0.14em] text-text-muted">
-          Intervy · 前端进阶 AI 陪练
+          前端进阶 · AI 面试陪练
         </p>
       </div>
 
@@ -85,7 +85,7 @@ async function submit(): Promise<void> {
       </div>
 
       <!-- 表单面板 -->
-      <div class="rounded-2xl border border-border bg-surface/70 p-6 backdrop-blur-md sm:p-8">
+      <div class="rounded-2xl bg-surface/70 p-6 backdrop-blur-md sm:p-8">
         <form class="space-y-4" @submit.prevent="submit">
           <div>
             <label class="mb-1.5 block text-xs text-text-secondary">用户名</label>
@@ -155,16 +155,5 @@ async function submit(): Promise<void> {
         </p>
       </div>
     </div>
-
-    <!-- Deerflow 署名 -->
-    <a
-      href="https://deerflow.tech"
-      target="_blank"
-      rel="noopener"
-      class="absolute bottom-5 right-6 font-display text-[10px] italic tracking-[0.18em] text-text-muted/60 transition-colors hover:text-text-muted"
-      aria-label="Created by Deerflow"
-    >
-      ✦ Deerflow
-    </a>
   </div>
 </template>

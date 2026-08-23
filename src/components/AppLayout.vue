@@ -47,7 +47,7 @@ const showOverlay = computed(() => appStore.sidebarOpen)
 
     <!-- Sidebar: fixed on mobile, relative on desktop -->
     <aside
-      class="sidebar-transition fixed left-0 top-0 z-50 flex h-full flex-col border-r border-border bg-surface lg:relative lg:z-auto"
+      class="sidebar-transition fixed left-0 top-0 z-50 flex h-full flex-col bg-surface lg:relative lg:z-auto"
       :class="[
         sidebarWidthClass,
         appStore.sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
@@ -57,7 +57,7 @@ const showOverlay = computed(() => appStore.sidebarOpen)
     </aside>
 
     <!-- Main content -->
-    <main class="flex min-h-0 min-w-0 flex-1 flex-col">
+    <main class="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <router-view v-slot="{ Component }">
         <transition name="page" mode="out-in">
           <Suspense>

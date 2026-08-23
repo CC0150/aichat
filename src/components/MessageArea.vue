@@ -422,7 +422,7 @@ onUnmounted(() => {
             class="absolute top-0 right-0 w-[400px] h-[400px] rounded-full bg-primary/[0.05] blur-3xl glow-breathe"
           />
           <div
-            class="absolute bottom-0 left-0 w-[300px] h-[300px] rounded-full bg-[#e8a766]/[0.04] blur-3xl glow-breathe"
+            class="absolute bottom-0 left-0 w-[300px] h-[300px] rounded-full bg-[#4aa8c3]/[0.05] blur-3xl glow-breathe"
             style="animation-delay: -4s"
           />
         </div>
@@ -454,7 +454,7 @@ onUnmounted(() => {
               你好<span class="text-primary">，</span>我是 Intervy
             </h2>
             <p class="mt-2 font-display text-sm italic text-text-muted/80">
-              前端进阶 · 随时提问，模拟实战
+              面试进阶 · 随时提问，模拟实战
             </p>
           </div>
 
@@ -464,7 +464,7 @@ onUnmounted(() => {
               v-for="(s, i) in suggestions"
               :key="s.label"
               type="button"
-              class="suggestion-card group relative w-full rounded-xl border border-border/50 bg-surface-elevated/60 backdrop-blur-sm px-3.5 py-3 text-left transition-all duration-500 hover:bg-surface-elevated hover:border-primary/25 hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5"
+              class="suggestion-card group relative w-full rounded-xl bg-surface-elevated/60 backdrop-blur-sm px-3.5 py-3 text-left transition-all duration-500 hover:bg-surface-elevated hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5"
               :style="{ animationDelay: `${i * 70}ms` }"
               @click="onSuggest(s)"
             >
@@ -600,7 +600,7 @@ onUnmounted(() => {
 
                   <!-- AI bubble -->
                   <div
-                    class="min-w-0 rounded-2xl rounded-bl-md bg-surface-elevated px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm ring-1 ring-border"
+                    class="min-w-0 rounded-2xl rounded-bl-md bg-surface-elevated px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm"
                   >
                     <div v-if="item.content && item.content.trim().length">
                       <MarkdownContent :content="item.content" :visible="active" />

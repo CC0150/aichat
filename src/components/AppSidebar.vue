@@ -140,7 +140,7 @@ function closeDeleteModal() {
   deletingChatId.value = null
 }
 
-/** 登出：清空服务端会话 + 移除浏览器本地的聊天/面试数据（防同浏览器跨账号泄露） */
+/** 登出：清服务端会话 + 移除浏览器本地的聊天/面试数据（防同浏览器跨账号泄露） */
 async function handleLogout() {
   try {
     localStorage.removeItem('chat')
@@ -157,7 +157,7 @@ async function handleLogout() {
 <template>
   <div class="flex h-full flex-col">
     <!-- Logo area -->
-    <div class="flex min-h-[56px] items-center gap-2 border-b border-border px-3">
+    <div class="flex min-h-[56px] items-center gap-2 px-3">
       <button
         v-tooltip="'展开 / 收起侧边栏'"
         type="button"
@@ -177,7 +177,7 @@ async function handleLogout() {
     </div>
 
     <!-- New chat -->
-    <div class="border-b border-border p-2">
+    <div class="p-2">
       <button
         v-tooltip="'新建一个空白对话'"
         type="button"
@@ -195,7 +195,7 @@ async function handleLogout() {
     </div>
 
     <!-- 功能导航 -->
-    <div class="border-b border-border p-2">
+    <div class="p-2">
       <button
         type="button"
         class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all duration-200"
@@ -356,12 +356,16 @@ async function handleLogout() {
       </div>
     </nav>
 
-    <!-- User -->
-    <div class="shrink-0 border-t border-border p-2">
-      <div v-if="authStore.user" class="flex items-center gap-3 rounded-lg px-3 py-2">
+    <!-- 底部：用户 + 主题切换 -->
+    <div class="shrink-0 space-y-1 px-2 pb-2.5 pt-1">
+      <div
+        v-if="authStore.user"
+        class="flex items-center gap-2 rounded-xl px-2 py-1.5 transition-colors hover:bg-surface-input"
+        :class="{ 'justify-center': appStore.sidebarCollapsed }"
+      >
         <span
           v-tooltip="authStore.user.username"
-          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-muted text-sm font-semibold text-primary uppercase"
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-[#f6fbfd] uppercase"
         >
           {{ authStore.user.username.slice(0, 1) }}
         </span>
@@ -372,41 +376,38 @@ async function handleLogout() {
           {{ authStore.user.username }}
         </span>
         <button
+          v-if="!appStore.sidebarCollapsed"
           v-tooltip="'退出登录'"
           type="button"
-          class="rounded-md p-1.5 text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-red-500"
+          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors duration-150 hover:bg-red-500/10 hover:text-red-500"
           aria-label="退出登录"
           @click="handleLogout"
         >
-          <Icon icon="lucide:log-out" class="h-[18px] w-[18px]" />
+          <Icon icon="lucide:log-out" class="h-4 w-4" />
         </button>
       </div>
       <button
         v-else
         type="button"
-        class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-text-secondary transition-all duration-200 hover:bg-surface-input hover:text-text-primary"
+        class="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary"
         @click="router.push({ name: 'Login' })"
       >
         <span
-          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-input text-text-secondary"
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-input text-text-secondary"
         >
           <Icon icon="lucide:user" class="h-[18px] w-[18px]" />
         </span>
         <span v-if="!appStore.sidebarCollapsed" class="truncate text-sm font-medium">登录</span>
       </button>
-    </div>
-
-    <!-- Theme toggle -->
-    <div class="shrink-0 border-t border-border p-2">
       <button
         v-tooltip="appStore.isDark ? '切换为日间模式' : '切换为夜间模式'"
         type="button"
-        class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-text-secondary transition-all duration-200 hover:bg-surface-input hover:text-text-primary"
+        class="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary"
         :aria-label="appStore.isDark ? '切换为日间模式' : '切换为夜间模式'"
         @click="appStore.toggleTheme()"
       >
         <span
-          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-input text-text-secondary"
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-input text-text-secondary"
         >
           <Icon v-if="appStore.isDark" icon="lucide:sun" class="h-[18px] w-[18px]" />
           <Icon v-else icon="lucide:moon" class="h-[18px] w-[18px]" />
@@ -415,19 +416,6 @@ async function handleLogout() {
           appStore.isDark ? '日间模式' : '夜间模式'
         }}</span>
       </button>
-    </div>
-
-    <!-- Deerflow 署名 -->
-    <div class="shrink-0 border-t border-border px-3 py-2.5">
-      <a
-        href="https://deerflow.tech"
-        target="_blank"
-        rel="noopener"
-        class="block text-center font-display text-[10px] italic tracking-[0.18em] text-text-muted/70 transition-colors hover:text-text-muted"
-        aria-label="Created by Deerflow"
-      >
-        ✦ Deerflow
-      </a>
     </div>
 
     <!-- Rename modal -->
