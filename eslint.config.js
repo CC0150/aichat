@@ -12,6 +12,7 @@ const tsPragmaticRules = {
     'error',
     { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
   ],
+  '@typescript-eslint/no-namespace': ['error', { allowDeclarations: true }],
 };
 
 export default [

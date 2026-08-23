@@ -1,9 +1,7 @@
 <script setup lang="ts">
-// @ts-nocheck
-import AppLayout from '@/components/AppLayout.vue'
-// 主题由 stores/app.js 的 isDark 与 toggleTheme 控制，并持久化到 localStorage
+// 顶层仅渲染 router-view：/login 为独立页，主应用由路由嵌套进 AppLayout
 </script>
 
 <template>
-  <AppLayout />
+  <router-view />
 </template>

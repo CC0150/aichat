@@ -5,6 +5,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
+import { useAuthStore } from '@/stores/auth'
 import Logo from './Logo.vue'
 import Modal from './Modal.vue'
 
@@ -16,6 +17,8 @@ const route = useRoute()
 const appStore = useAppStore()
 /** 聊天状态（对话历史、当前对话等） */
 const chatStore = useChatStore()
+/** 登录状态（当前用户、登出） */
+const authStore = useAuthStore()
 
 /** 搜索输入框的实时值 */
 const searchQuery = ref('')
@@ -135,6 +138,19 @@ function confirmDelete() {
 function closeDeleteModal() {
   isDeleteModalOpen.value = false
   deletingChatId.value = null
+}
+
+/** 登出：清空服务端会话 + 移除浏览器本地的聊天/面试数据（防同浏览器跨账号泄露） */
+async function handleLogout() {
+  try {
+    localStorage.removeItem('chat')
+    localStorage.removeItem('interview')
+    localStorage.removeItem('knowledge')
+  } catch {
+    /* ignore */
+  }
+  await authStore.logout()
+  router.push({ name: 'Login' })
 }
 </script>
 
@@ -340,6 +356,46 @@ function closeDeleteModal() {
       </div>
     </nav>
 
+    <!-- User -->
+    <div class="shrink-0 border-t border-border p-2">
+      <div v-if="authStore.user" class="flex items-center gap-3 rounded-lg px-3 py-2">
+        <span
+          v-tooltip="authStore.user.username"
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-muted text-sm font-semibold text-primary uppercase"
+        >
+          {{ authStore.user.username.slice(0, 1) }}
+        </span>
+        <span
+          v-if="!appStore.sidebarCollapsed"
+          class="min-w-0 flex-1 truncate text-sm font-medium text-text-primary"
+        >
+          {{ authStore.user.username }}
+        </span>
+        <button
+          v-tooltip="'退出登录'"
+          type="button"
+          class="rounded-md p-1.5 text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-red-500"
+          aria-label="退出登录"
+          @click="handleLogout"
+        >
+          <Icon icon="lucide:log-out" class="h-[18px] w-[18px]" />
+        </button>
+      </div>
+      <button
+        v-else
+        type="button"
+        class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-text-secondary transition-all duration-200 hover:bg-surface-input hover:text-text-primary"
+        @click="router.push({ name: 'Login' })"
+      >
+        <span
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-input text-text-secondary"
+        >
+          <Icon icon="lucide:user" class="h-[18px] w-[18px]" />
+        </span>
+        <span v-if="!appStore.sidebarCollapsed" class="truncate text-sm font-medium">登录</span>
+      </button>
+    </div>
+
     <!-- Theme toggle -->
     <div class="shrink-0 border-t border-border p-2">
       <button
@@ -359,6 +415,19 @@ function closeDeleteModal() {
           appStore.isDark ? '日间模式' : '夜间模式'
         }}</span>
       </button>
+    </div>
+
+    <!-- Deerflow 署名 -->
+    <div class="shrink-0 border-t border-border px-3 py-2.5">
+      <a
+        href="https://deerflow.tech"
+        target="_blank"
+        rel="noopener"
+        class="block text-center font-display text-[10px] italic tracking-[0.18em] text-text-muted/70 transition-colors hover:text-text-muted"
+        aria-label="Created by Deerflow"
+      >
+        ✦ Deerflow
+      </a>
     </div>
 
     <!-- Rename modal -->

@@ -2,6 +2,7 @@ import cors from 'cors'
 import express, { type Express, type Request, type Response, type NextFunction } from 'express'
 import helmet from 'helmet'
 import compression from 'compression'
+import cookieParser from 'cookie-parser'
 import rateLimit from 'express-rate-limit'
 
 /**
@@ -33,6 +34,7 @@ export function setupMiddleware(app: Express): void {
     }),
   )
   app.use(express.json({ limit: '5mb' }))
+  app.use(cookieParser())
 
   // API 速率限制：防止 API 额度被滥用
   const apiLimiter = rateLimit({

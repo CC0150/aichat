@@ -30,6 +30,13 @@ export async function apiRequest(
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({}))
+    // 会话过期/未登录：排除 auth 接口（登录失败不该触发跳转），其余跳到登录页
+    if (response.status === 401 && !url.includes('/api/auth')) {
+      if (window.location.pathname !== '/login') {
+        window.location.assign(`/login?reason=expired`)
+      }
+      throw new Error('登录已失效，请重新登录')
+    }
     throw new Error(data.error || `请求失败：${response.status}`)
   }
 
