@@ -419,10 +419,10 @@ onUnmounted(() => {
         <!-- Ambient atmosphere -->
         <div class="absolute inset-0 pointer-events-none">
           <div
-            class="absolute top-0 right-0 w-[400px] h-[400px] rounded-full bg-indigo-500/[0.04] blur-3xl animate-breath"
+            class="absolute top-0 right-0 w-[400px] h-[400px] rounded-full bg-primary/[0.05] blur-3xl glow-breathe"
           />
           <div
-            class="absolute bottom-0 left-0 w-[300px] h-[300px] rounded-full bg-violet-500/[0.03] blur-3xl animate-breath"
+            class="absolute bottom-0 left-0 w-[300px] h-[300px] rounded-full bg-[#e8a766]/[0.04] blur-3xl glow-breathe"
             style="animation-delay: -4s"
           />
         </div>
@@ -430,8 +430,8 @@ onUnmounted(() => {
         <!-- Content -->
         <div class="relative w-full max-w-lg">
           <!-- Headline group -->
-          <div class="mb-6">
-            <div class="flex items-center gap-2 mb-2">
+          <div class="mb-8">
+            <div class="flex items-center gap-2.5 mb-3">
               <div
                 class="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-muted/80 backdrop-blur-sm ring-1 ring-primary/10"
               >
@@ -444,15 +444,17 @@ onUnmounted(() => {
                   <circle cx="27" cy="10" r="3" class="fill-primary-muted" />
                 </svg>
               </div>
-              <span class="text-[11px] font-medium text-text-muted tracking-widest uppercase"
-                >AI-Powered Interview Copilot</span
+              <span class="text-[11px] font-display italic text-text-muted tracking-[0.3em]"
+                >AI 面试陪练室</span
               >
             </div>
-            <h2 class="text-2xl font-semibold tracking-tight text-text-primary leading-[1.25]">
-              你好<span class="text-text-muted">，我是 Intervy</span>
+            <h2
+              class="font-display text-[26px] font-light tracking-[0.06em] leading-[1.35] text-text-primary"
+            >
+              你好<span class="text-primary">，</span>我是 Intervy
             </h2>
-            <p class="mt-1.5 text-sm text-text-muted/70">
-              AI 驱动的智能面试助手，随时提问，模拟实战
+            <p class="mt-2 font-display text-sm italic text-text-muted/80">
+              前端进阶 · 随时提问，模拟实战
             </p>
           </div>
 
@@ -605,21 +607,21 @@ onUnmounted(() => {
                     </div>
                     <!-- Thinking state -->
                     <div v-else class="flex items-center gap-2 py-1 text-sm text-text-muted">
-                      <span class="flex gap-1">
+                      <span class="flex gap-1.5">
                         <span
-                          class="h-1.5 w-1.5 rounded-full bg-primary animate-bounce"
+                          class="ink-dot h-1.5 w-1.5 rounded-full bg-primary"
                           style="animation-delay: 0ms"
                         />
                         <span
-                          class="h-1.5 w-1.5 rounded-full bg-primary animate-bounce"
-                          style="animation-delay: 150ms"
+                          class="ink-dot h-1.5 w-1.5 rounded-full bg-primary"
+                          style="animation-delay: 180ms"
                         />
                         <span
-                          class="h-1.5 w-1.5 rounded-full bg-primary animate-bounce"
-                          style="animation-delay: 300ms"
+                          class="ink-dot h-1.5 w-1.5 rounded-full bg-primary"
+                          style="animation-delay: 360ms"
                         />
                       </span>
-                      <span class="text-xs">AI 正在思考…</span>
+                      <span class="font-display text-xs italic tracking-wide">AI 正在遣词……</span>
                     </div>
                   </div>
                 </div>

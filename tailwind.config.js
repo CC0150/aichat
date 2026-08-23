@@ -20,6 +20,10 @@ export default {
         'text-secondary': 'var(--color-text-secondary)',
         'text-muted': 'var(--color-text-muted)',
       },
+      fontFamily: {
+        sans: ['var(--font-sans)'],
+        display: ['var(--font-display)'],
+      },
       width: {
         sidebar: 'var(--sidebar-width, 280px)',
         'sidebar-collapsed': 'var(--sidebar-collapsed-width, 72px)',

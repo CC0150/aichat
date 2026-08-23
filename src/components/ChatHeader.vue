@@ -33,10 +33,10 @@ function handleRenameClick() {
 
 <template>
   <header
-    class="flex min-h-[56px] shrink-0 items-center justify-between gap-2 border-b border-border bg-background/80 backdrop-blur-md px-4"
+    class="relative flex min-h-[58px] shrink-0 items-center justify-between gap-2 border-b border-border bg-background/70 px-4 backdrop-blur-md sm:px-6"
   >
-    <div class="flex min-w-0 flex-1 items-center gap-2">
-      <span class="truncate text-sm font-semibold tracking-tight text-text-primary">{{
+    <div class="flex min-w-0 flex-1 items-center gap-3">
+      <span class="truncate font-display text-[15px] font-normal tracking-wide text-text-primary">{{
         currentTitle
       }}</span>
       <button
@@ -50,5 +50,9 @@ function handleRenameClick() {
         <Icon icon="lucide:pencil" class="h-3.5 w-3.5" />
       </button>
     </div>
+    <span
+      class="absolute bottom-0 left-0 h-px w-16 bg-primary/70 transition-all duration-500"
+      aria-hidden="true"
+    />
   </header>
 </template>
