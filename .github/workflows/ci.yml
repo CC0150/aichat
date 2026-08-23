@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  # 允许在 GitHub 网页上手动触发
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: 类型检查 / Lint / 构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 服务端 @lancedb/lancedb 若缺少预编译二进制需要现场编译
+      - name: 安装 LanceDB 编译依赖
+        run: sudo apt-get update && sudo apt-get install -y python3 make g++
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 安装服务端依赖
+        working-directory: server
+        run: npm ci
+
+      - name: 运行 check（vue-tsc + server tsc + eslint）
+        run: npm run check
+
+      - name: 生产构建
+        run: npm run build
