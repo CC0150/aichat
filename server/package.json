@@ -2,10 +2,10 @@
   "name": "aichat-server",
   "version": "1.0.0",
   "private": true,
-  "main": "index.js",
+  "main": "index.ts",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "tsx index.ts",
+    "dev": "nodemon --ext ts --exec tsx index.ts"
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.31.0",
@@ -15,14 +15,24 @@
     "express": "^4.19.2",
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
-    "openai": "^6.27.0"
+    "openai": "^6.27.0",
+    "tsx": "^4.23.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "@types/compression": "^1.8.1",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.1",
+    "nodemon": "^3.1.0",
+    "typescript": "~5.7.0"
   },
   "nodemonConfig": {
     "ignore": [
       "data/**"
-    ]
+    ],
+    "watch": [
+      "."
+    ],
+    "ext": "ts"
   }
 }

@@ -4,4 +4,3 @@ declare module 'vue3-virtual-scroller' {
   const VueVirtualScroller: Plugin
   export default VueVirtualScroller
 }
-

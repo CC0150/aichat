@@ -1,0 +1,18 @@
+services:
+  aichat:
+    build: .
+    container_name: aichat
+    ports:
+      - "3001:3001"
+    volumes:
+      # 数据持久化：知识库文件 + 向量存储
+      - ./server/data:/app/server/data
+    env_file:
+      # 从宿主机 .env 注入环境变量到容器（不进入镜像）
+      - ./server/.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health',r=>{process.exit(r.statusCode===200?0:1)})"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

@@ -1,4 +1,5 @@
-<script setup>
+<script setup lang="ts">
+// @ts-nocheck
 import { ref, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
@@ -16,7 +17,7 @@ const { toast, toastType, showToast } = useToast()
 /** 当前视图模式：'list'（列表）或 'detail'（详情） */
 const viewMode = ref('list')
 /** 当前查看详情的知识库 ID */
-const detailKbId = ref(null)
+const detailKbId = ref<any>(null)
 
 // 内联编辑
 /** 是否处于编辑名称/描述模式 */
@@ -59,11 +60,11 @@ const newDescription = ref('')
 /** 删除确认弹窗是否可见 */
 const showDeleteModal = ref(false)
 /** 待删除的知识库对象 */
-const deleteTarget = ref(null)
+const deleteTarget = ref<any>(null)
 
 // 文件上传
 /** 文件选择 input DOM 引用 */
-const fileInputRef = ref(null)
+const fileInputRef = ref<any>(null)
 /** 是否正在解析上传的文件 */
 const isParsing = ref(false)
 /** 文件上传错误信息 */
@@ -175,7 +176,7 @@ async function handleFileUpload(event) {
     })
     // 刷新详情以展示新上传的文件
     await store.fetchKB(detailKbId.value)
-  } catch (err) {
+  } catch (err: any) {
     uploadError.value = err.message || '文件上传失败'
   } finally {
     isParsing.value = false

@@ -1,4 +1,5 @@
-<script setup>
+<script setup lang="ts">
+// @ts-nocheck
 import { watch, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import ChatHeader from '@/components/ChatHeader.vue'
@@ -11,7 +12,7 @@ const route = useRoute()
 /** 聊天状态（历史、消息、当前对话等） */
 const chatStore = useChatStore()
 /** ChatInput 子组件引用（用于外部触发发送/继续生成） */
-const chatInputRef = ref(null)
+const chatInputRef = ref<any>(null)
 
 /** 控制重命名模态框的显示 */
 const showRenameModal = ref(false)

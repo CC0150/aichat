@@ -1,4 +1,5 @@
-<script setup>
+<script setup lang="ts">
+// @ts-nocheck -- template ref type inference needs gradual improvement
 import { Icon } from '@iconify/vue'
 import { ref, computed, onMounted, onUnmounted, TransitionGroup } from 'vue'
 import { useRouter } from 'vue-router'
@@ -415,14 +416,12 @@ async function continueGeneration() {
     if (controller.signal.aborted) return
 
     const streamingChatId = chatStore.currentChatId
-    await requestChatStream({
-      model: modelConfig.model,
-      messages,
-      onChunk: (chunk) => {
+    await requestChatStream(modelConfig.model, messages, {
+      onChunk: (chunk: string) => {
         // 确保流式响应仍然对应当前对话（防止用户快速切换对话导致的串数据）
         if (chatStore.currentChatId === streamingChatId) chatStore.appendToLastMessage(chunk)
       },
-      onError: (msg) => {
+      onError: (msg: string) => {
         if (chatStore.currentChatId === streamingChatId)
           chatStore.setLastAssistantMessage(`Error: ${msg}（点击重新生成按钮重试）`)
       },
@@ -437,7 +436,7 @@ async function continueGeneration() {
       }
     } else {
       console.error('API error:', error)
-      chatStore.setLastAssistantMessage(`Error: ${error.message}`)
+      chatStore.setLastAssistantMessage(`Error: ${(error as any).message}`)
     }
   } finally {
     // 防止覆盖其他请求的 controller（例如并发发送）
@@ -484,7 +483,15 @@ async function sendMessage(content) {
       name: img.name,
       url: img.url,
     }))
-    chatStore.addMessage('user', { text, attachments: attachmentSnapshots, images: imageSnapshots })
+    chatStore.addMessage('user', {
+      text,
+      attachments: attachmentSnapshots,
+      images: imageSnapshots,
+      ...(selectedKbId.value ? { kbId: selectedKbId.value } : {}),
+    })
+  } else if (selectedKbId.value) {
+    // KB 模式：附带 kbId，让 regenerate 知道需要走 RAG 管线
+    chatStore.addMessage('user', { text, kbId: selectedKbId.value })
   } else {
     chatStore.addMessage('user', text)
   }
@@ -559,13 +566,11 @@ async function sendMessage(content) {
 
     const streamingChatId = chatStore.currentChatId
     // SSE 流式请求：每个 data chunk 追加到当前 assistant 消息末尾
-    await requestChatStream({
-      model: modelConfig.model,
-      messages,
-      onChunk: (chunk) => {
+    await requestChatStream(modelConfig.model, messages, {
+      onChunk: (chunk: string) => {
         if (chatStore.currentChatId === streamingChatId) chatStore.appendToLastMessage(chunk)
       },
-      onError: (msg) => {
+      onError: (msg: string) => {
         if (chatStore.currentChatId === streamingChatId)
           chatStore.setLastAssistantMessage(`Error: ${msg}（点击重新生成按钮重试）`)
       },
@@ -580,7 +585,7 @@ async function sendMessage(content) {
       }
     } else {
       console.error('API error:', error)
-      chatStore.setLastAssistantMessage(`Error: ${error.message}`)
+      chatStore.setLastAssistantMessage(`Error: ${(error as any).message}`)
     }
   } finally {
     if (activeController === controller) activeController = null

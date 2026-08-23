@@ -1,4 +1,5 @@
-<script setup>
+<script setup lang="ts">
+// @ts-nocheck
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { useInterviewStore } from '@/stores/interview'
@@ -9,6 +10,8 @@ import {
   getScoreLabel,
   getCategoryStats,
   getRecordWeakPoints,
+  getHistoryCategoryStats,
+  getHistoryWeakPoints,
 } from '@/utils/interviewHelpers'
 import Modal from '@/components/Modal.vue'
 import DualPaneLayout from './DualPaneLayout.vue'
@@ -33,13 +36,13 @@ function handleExport(format) {
 }
 
 /** 柱状图 canvas DOM 引用 */
-const barCanvas = ref(null)
+const barCanvas = ref<any>(null)
 /** Chart.js 柱状图实例 */
 let barChart = null
 
 // 详情弹窗 — replaced with inline dual-pane
 /** 左侧列表中当前选中的记录 ID */
-const selectedRecordId = ref(null)
+const selectedRecordId = ref<any>(null)
 
 /** 当前选中记录 */
 const selectedRecord = computed(
@@ -508,13 +511,16 @@ function handleExportBackdropClick(e) {
                   </div>
 
                   <!-- 分类得分 -->
-                  <div v-if="Object.keys(getCategoryStats(selectedRecord)).length" class="mb-5">
+                  <div
+                    v-if="Object.keys(getHistoryCategoryStats(selectedRecord)).length"
+                    class="mb-5"
+                  >
                     <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
                       分类得分
                     </h4>
                     <div class="grid grid-cols-3 gap-2">
                       <div
-                        v-for="(score, cat) in getCategoryStats(selectedRecord)"
+                        v-for="(score, cat) in getHistoryCategoryStats(selectedRecord)"
                         :key="cat"
                         class="rounded-lg border border-border bg-surface-elevated p-3 text-center"
                       >
@@ -526,15 +532,15 @@ function handleExportBackdropClick(e) {
                     </div>
                   </div>
 
-                  <!-- 薄弱分类 -->
+                  <!-- 薄弱知识点 -->
                   <div
-                    v-if="getRecordWeakPoints(selectedRecord).length"
+                    v-if="getHistoryWeakPoints(selectedRecord).length"
                     class="mb-5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4"
                   >
                     <h4 class="mb-2 text-xs font-semibold text-amber-500">需要加强</h4>
                     <div class="flex flex-wrap gap-1.5">
                       <span
-                        v-for="wp in getRecordWeakPoints(selectedRecord)"
+                        v-for="wp in getHistoryWeakPoints(selectedRecord)"
                         :key="wp.knowledgePoint"
                         class="rounded-full border border-amber-500/20 bg-surface px-2.5 py-0.5 text-xs text-text-secondary"
                         >{{ wp.knowledgePoint }}（{{ wp.score }} 分）</span

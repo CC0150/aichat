@@ -1,18 +1,79 @@
-<script setup>
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+<script setup lang="ts">
+// @ts-nocheck
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import MarkdownIt from 'markdown-it'
-import hljs from 'highlight.js'
+import hljs from 'highlight.js/lib/core'
 import 'highlight.js/styles/github.css'
+import javascript from 'highlight.js/lib/languages/javascript'
+import typescript from 'highlight.js/lib/languages/typescript'
+import xml from 'highlight.js/lib/languages/xml'
+import css from 'highlight.js/lib/languages/css'
+import json from 'highlight.js/lib/languages/json'
+import bash from 'highlight.js/lib/languages/bash'
+import python from 'highlight.js/lib/languages/python'
+import sql from 'highlight.js/lib/languages/sql'
+
+// 只注册实际会用到的语言，避免打包全部 ~190 种语言
+hljs.registerLanguage('javascript', javascript)
+hljs.registerLanguage('js', javascript)
+hljs.registerLanguage('typescript', typescript)
+hljs.registerLanguage('ts', typescript)
+hljs.registerLanguage('html', xml)
+hljs.registerLanguage('xml', xml)
+hljs.registerLanguage('vue', xml)
+hljs.registerLanguage('css', css)
+hljs.registerLanguage('json', json)
+hljs.registerLanguage('bash', bash)
+hljs.registerLanguage('shell', bash)
+hljs.registerLanguage('python', python)
+hljs.registerLanguage('py', python)
+hljs.registerLanguage('sql', sql)
 
 const props = defineProps({
   content: { type: String, default: '' },
+  /**
+   * 是否在视口内（由 DynamicScroller 的 active 状态传入）。
+   * 不在视口时不重新解析 markdown，返回上次缓存的 HTML，
+   * 避免用户翻看历史时底部流式消息反复触发 md.render()。
+   */
+  visible: { type: Boolean, default: true },
 })
 
 /** 根容器 DOM 引用（用于事件委托监听复制按钮点击） */
-const rootRef = ref(null)
+const rootRef = ref<any>(null)
 
 // 初始化 markdown-it 实例：禁止 HTML 标签，启用自动链接识别
 const md = new MarkdownIt({ html: false, linkify: true })
+
+/**
+ * 渲染节流：流式输出时每个 chunk 都会触发重渲染，内容越长单次成本越高。
+ * 这里把渲染合并到 100ms 窗口内的最后一次变更（trailing），
+ * 首个内容立即渲染避免闪空，重复内容直接跳过。
+ */
+const cachedHtml = ref('')
+const RENDER_THROTTLE_MS = 100
+let renderTimer: ReturnType<typeof setTimeout> | null = null
+let pendingContent = ''
+let lastRendered = ''
+
+function renderNow(content: string): void {
+  if (content === lastRendered) return
+  lastRendered = content
+  cachedHtml.value = md.render(content || '')
+}
+
+function scheduleRender(content: string): void {
+  pendingContent = content
+  if (renderTimer) return
+  if (cachedHtml.value === '') {
+    // 首个内容立即渲染，避免短暂空白
+    renderNow(content)
+  }
+  renderTimer = setTimeout(() => {
+    renderTimer = null
+    renderNow(pendingContent)
+  }, RENDER_THROTTLE_MS)
+}
 
 /**
  * 自定义围栏代码块（```）的渲染规则
@@ -45,8 +106,30 @@ md.renderer.rules.fence = (tokens, idx) => {
   `.trim()
 }
 
-/** 将 markdown 内容渲染为 HTML 字符串 */
-const html = computed(() => md.render(props.content || ''))
+/** 不在视口时跳过重解析，返回上次缓存 */
+const html = computed(() => cachedHtml.value)
+
+watch(
+  () => props.content,
+  (content) => {
+    if (!props.visible) return
+    scheduleRender(content || '')
+  },
+  { immediate: true },
+)
+
+// 回到视口时立刻用最新内容重渲染（节流期间可能停留在旧内容上）
+watch(
+  () => props.visible,
+  (visible) => {
+    if (!visible) return
+    if (renderTimer) {
+      clearTimeout(renderTimer)
+      renderTimer = null
+    }
+    renderNow(props.content || '')
+  },
+)
 
 /**
  * 复制代码按钮的事件委托处理
@@ -70,7 +153,7 @@ function handleCopyCode(e) {
         span.textContent = old
       }, 1500)
     }
-  } catch (_) {}
+  } catch (_: any) {}
 }
 
 // 使用事件委托监听代码复制按钮点击
@@ -79,6 +162,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (renderTimer) {
+    clearTimeout(renderTimer)
+    renderTimer = null
+  }
   rootRef.value?.removeEventListener('click', handleCopyCode)
 })
 </script>

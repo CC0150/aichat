@@ -1,4 +1,5 @@
-<script setup>
+<script setup lang="ts">
+// @ts-nocheck
 import { Icon } from '@iconify/vue'
 import ScoreBadge from './ScoreBadge.vue'
 import ConversationThread from './ConversationThread.vue'

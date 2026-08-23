@@ -1,10 +1,11 @@
-<script setup>
+<script setup lang="ts">
+// @ts-nocheck
 import { ref, computed, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useRouter } from 'vue-router'
 import { useInterviewStore } from '@/stores/interview'
 import { useAppStore } from '@/stores/app'
-import { interviewTypes } from '@/data/questions/index.js'
+import { interviewTypes } from '@/data/questions/index'
 import { requestGenerateQuestions, requestGenerateQuestionsByRole } from '@/utils/interviewApi'
 import { parseFile } from '@/utils/docParser'
 import { useKnowledgeStore } from '@/stores/knowledge'
@@ -25,7 +26,7 @@ const knowledgeStore = useKnowledgeStore()
 /** 当前出题模式标签：'bank'（题库）| 'file'（文件）| 'knowledge'（知识库） */
 const activeTab = ref('bank')
 /** 题库模式中选中的预设类型 key（如 'frontend', 'js-core'）或自定义岗位字符串 */
-const selectedType = ref(null)
+const selectedType = ref<any>(null)
 
 /** 切换出题模式，切换到知识库时自动加载列表 */
 function switchTab(tab) {
@@ -52,7 +53,7 @@ const isCustomCount = ref(false)
 /** 自定义题目数量的输入文本 */
 const customCountInput = ref('')
 /** 自定义数量 input DOM 引用 */
-const countInputRef = ref(null)
+const countInputRef = ref<any>(null)
 /** 最大题目数上限 */
 const MAX_QUESTIONS = 50
 
@@ -103,9 +104,9 @@ const difficultyOptions = [
 
 // ===== 文件出题模式 =====
 /** 文件选择 input DOM 引用 */
-const fileInputRef = ref(null)
+const fileInputRef = ref<any>(null)
 /** 已上传并解析成功的文件：{ name, text, type } */
-const uploadedFile = ref(null)
+const uploadedFile = ref<any>(null)
 /** 是否正在解析文件 */
 const isParsing = ref(false)
 /** 是否正在调用 AI 生成题目 */
@@ -152,7 +153,7 @@ async function handleFileUpload(event) {
     } else {
       uploadedFile.value = parsed
     }
-  } catch (err) {
+  } catch (err: any) {
     fileError.value = err.message || '文件解析失败，请重试'
     uploadedFile.value = null
   } finally {
@@ -187,7 +188,7 @@ async function startFileInterview() {
       return
     }
     interviewStore.loadCustomQuestions(result.questions, uploadedFile.value.name)
-  } catch (err) {
+  } catch (err: any) {
     fileError.value = err.message || '题目生成失败，请重试'
   } finally {
     isGenerating.value = false
@@ -196,7 +197,7 @@ async function startFileInterview() {
 
 // ===== 知识库出题模式 =====
 /** 选中的知识库 ID */
-const selectedKBId = ref(null)
+const selectedKBId = ref<any>(null)
 /** 是否正在调用 AI 从知识库生成题目 */
 const isKBGenerating = ref(false)
 /** 知识库模式的错误信息 */
@@ -234,7 +235,7 @@ async function startKBInterview() {
       // 刷新 KB 列表
       await knowledgeStore.fetchKBs()
       selectedKBId.value = kb.id
-    } catch (err) {
+    } catch (err: any) {
       kbError.value = err.message || '创建知识库失败'
       isKBGenerating.value = false
       return
@@ -267,7 +268,7 @@ async function startKBInterview() {
     const kb = knowledgeStore.kbs.find((k) => k.id === selectedKBId.value)
     interviewStore.loadCustomQuestions(result.questions, kb ? `知识库：${kb.name}` : '知识库')
     interviewStore.kbId = selectedKBId.value
-  } catch (err) {
+  } catch (err: any) {
     kbError.value = err.message || '题目生成失败，请重试'
   } finally {
     isKBGenerating.value = false
@@ -334,7 +335,7 @@ async function startRoleInterview() {
       return
     }
     interviewStore.loadCustomQuestions(result.questions, `岗位：${selectedType.value}`)
-  } catch (err) {
+  } catch (err: any) {
     roleError.value = err.message || '题目生成失败，请重试'
   } finally {
     isRoleGenerating.value = false

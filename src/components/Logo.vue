@@ -1,4 +1,5 @@
-<script setup>
+<script setup lang="ts">
+// @ts-nocheck
 /**
  * Logo 组件
  * @param {number} size - Logo SVG 尺寸（宽高相等），默认 32px

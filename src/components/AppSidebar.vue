@@ -1,4 +1,5 @@
-<script setup>
+<script setup lang="ts">
+// @ts-nocheck
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Icon } from '@iconify/vue'
@@ -21,19 +22,19 @@ const searchQuery = ref('')
 /** 经过 200ms 防抖后的搜索关键词，用于过滤历史列表 */
 const debouncedQuery = ref('')
 /** 防抖定时器句柄 */
-let debounceTimer = null
+let debounceTimer: number | null = null
 
 // 搜索防抖：用户停止输入 200ms 后才更新过滤关键词，减少不必要的 computed 重算
 watch(searchQuery, (val) => {
-  clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(() => {
+  if (debounceTimer != null) clearTimeout(debounceTimer)
+  debounceTimer = window.setTimeout(() => {
     debouncedQuery.value = val
   }, 200)
 })
 
 // 组件卸载时清理防抖定时器，防止内存泄漏
 onUnmounted(() => {
-  clearTimeout(debounceTimer)
+  if (debounceTimer != null) clearTimeout(debounceTimer)
 })
 
 /** 根据搜索关键词过滤聊天历史列表 */

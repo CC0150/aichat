@@ -1,9 +1,16 @@
-<script setup>
+<script setup lang="ts">
+// @ts-nocheck
 import { ref, reactive, watch, computed, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useInterviewStore } from '@/stores/interview'
 import { useAppStore } from '@/stores/app'
-import { requestScore, requestEvaluate, requestAgentEvaluate } from '@/utils/interviewApi'
+import {
+  requestScore,
+  requestEvaluate,
+  requestAgentEvaluate,
+  requestAgentEvaluateStream,
+} from '@/utils/interviewApi'
+import type { AgentStreamCallbacks } from '@/utils/interviewApi'
 import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
 import QuestionReviewCard from './QuestionReviewCard.vue'
 import ScoreBadge from './ScoreBadge.vue'
@@ -22,8 +29,18 @@ const codeAnswer = ref('')
 const isScoring = ref(false)
 /** 评分过程中的错误信息 */
 const scoreError = ref('')
-/** Agent 工具调用记录（前端展示用） */
-const agentSteps = ref([])
+/** Agent 工具调用记录（前端展示用）
+ *  每个步骤包含 status: 'running' | 'done'，支持流式实时更新 */
+const agentSteps = ref<
+  Array<{
+    toolName: string
+    args: Record<string, unknown>
+    result?: string
+    status: 'running' | 'done'
+  }>
+>([])
+/** 标识 Agent 是否正在流式执行中（用于 UI 动画） */
+const isAgentStreaming = ref(false)
 /** 普通题 textarea DOM 引用 */
 const textareaRef = ref(null)
 /** 代码编辑器 textarea DOM 引用 */
@@ -179,38 +196,98 @@ function getQuestionStatus(index) {
 }
 
 /**
- * 调用评估 API（Agent 或普通模式）并处理返回结果
- * 提取自 handleSubmit 和 retryScore 的重复逻辑
+ * 调用评估 API（Agent 流式 / 普通模式）并处理返回结果
+ *
+ * 知识库模式 → 走 SSE 流式 Agent 评估，前端实时展示 Agent 推理过程
+ * 普通模式   → 走传统 REST 评估，等待完整结果返回
  */
-async function evaluateCurrentQuestion() {
+async function evaluateCurrentQuestion(signal?: AbortSignal) {
   const q = interviewStore.currentQuestion
   const conversationHistory = interviewStore.conversations[q.id] || []
   const hasKB = !!interviewStore.kbId
-  const result = hasKB
-    ? await requestAgentEvaluate({
+
+  if (hasKB) {
+    // ===== 流式 Agent 评估 =====
+    agentSteps.value = []
+    isAgentStreaming.value = true
+
+    const callbacks: AgentStreamCallbacks = {
+      onThinking() {
+        // Agent 正在思考，保持 isAgentStreaming 为 true，UI 显示加载状态
+      },
+      onToolCall(toolName, args) {
+        // 实时添加工具调用卡片（状态为 running）
+        agentSteps.value = [...agentSteps.value, { toolName, args, status: 'running' as const }]
+      },
+      onToolResult(toolName, result) {
+        // 更新对应卡片为完成状态，填入执行结果
+        agentSteps.value = agentSteps.value.map((s) =>
+          s.toolName === toolName && s.status === 'running'
+            ? { ...s, status: 'done' as const, result }
+            : s,
+        )
+      },
+      onDone(result) {
+        isAgentStreaming.value = false
+        const action = interviewStore.handleEvaluateResult(q.id, result)
+        // 用服务端返回的完整步骤列表替换（含更精确的 args）
+        if (result.agentSteps?.length) {
+          agentSteps.value = result.agentSteps.map((s: any) => ({
+            toolName: s.toolName,
+            args: s.args || {},
+            status: 'done' as const,
+          }))
+        }
+        if (action === 'follow_up') {
+          followUpQuestion.value = result.followUpQuestion
+          currentRound.value++
+          userAnswer.value = ''
+          codeAnswer.value = ''
+        } else {
+          followUpQuestion.value = ''
+          currentRound.value = 0
+        }
+      },
+      onError(error) {
+        isAgentStreaming.value = false
+        scoreError.value = error
+        interviewStore.phase = 'answering'
+      },
+    }
+
+    await requestAgentEvaluateStream(
+      {
         question: q.question,
         answerPoints: q.answerPoints,
         conversationHistory,
         kbId: interviewStore.kbId,
         model: appStore.currentModelId,
-      })
-    : await requestEvaluate({
-        question: q.question,
-        answerPoints: q.answerPoints,
-        conversationHistory,
-        model: appStore.currentModelId,
-      })
-
-  const action = interviewStore.handleEvaluateResult(q.id, result)
-  agentSteps.value = result.agentSteps?.length ? result.agentSteps : []
-  if (action === 'follow_up') {
-    followUpQuestion.value = result.followUpQuestion
-    currentRound.value++
-    userAnswer.value = ''
-    codeAnswer.value = ''
+      },
+      callbacks,
+      signal,
+    )
   } else {
-    followUpQuestion.value = ''
-    currentRound.value = 0
+    // ===== 传统 REST 评估 =====
+    const result = await requestEvaluate({
+      question: q.question,
+      answerPoints: q.answerPoints,
+      conversationHistory,
+      model: appStore.currentModelId,
+    })
+
+    const action = interviewStore.handleEvaluateResult(q.id, result)
+    agentSteps.value = result.agentSteps?.length
+      ? result.agentSteps.map((s: any) => ({ ...s, status: 'done' as const }))
+      : []
+    if (action === 'follow_up') {
+      followUpQuestion.value = result.followUpQuestion
+      currentRound.value++
+      userAnswer.value = ''
+      codeAnswer.value = ''
+    } else {
+      followUpQuestion.value = ''
+      currentRound.value = 0
+    }
   }
 }
 
@@ -321,6 +398,7 @@ function handleNext() {
   followUpQuestion.value = ''
   currentRound.value = 0
   agentSteps.value = []
+  isAgentStreaming.value = false
   interviewStore.nextQuestion()
 }
 
@@ -503,25 +581,41 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Agent 工具调用记录 -->
+        <!-- Agent 工具调用记录（流式实时可视化） -->
         <div
           v-if="agentSteps.length > 0 && interviewStore.phase === 'answering'"
           class="mb-4 space-y-2"
         >
           <div
-            class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary"
+            class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-primary"
           >
             <Icon icon="lucide:bot" class="h-3.5 w-3.5" />
             <span>AI Agent 工作记录（{{ agentSteps.length }} 步）</span>
+            <!-- 流式进行中的呼吸动画指示器 -->
+            <span
+              v-if="isAgentStreaming"
+              class="inline-flex h-2 w-2 rounded-full bg-primary animate-ping"
+            />
           </div>
           <div
             v-for="(step, si) in agentSteps"
             :key="si"
-            class="rounded-lg border border-border bg-surface-elevated px-3 py-2.5"
+            class="rounded-lg border transition-all duration-300 px-3 py-2.5"
+            :class="
+              step.status === 'running'
+                ? 'border-primary/30 bg-primary/[0.04] shadow-[0_0_12px_rgba(99,102,241,0.08)]'
+                : 'border-border bg-surface-elevated'
+            "
           >
             <div class="flex items-start gap-2">
+              <!-- 运行中 → 旋转加载图标；完成 → 工具图标 -->
               <Icon
-                v-if="step.toolName === 'searchKnowledgeBase'"
+                v-if="step.status === 'running'"
+                icon="lucide:loader-2"
+                class="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary"
+              />
+              <Icon
+                v-else-if="step.toolName === 'searchKnowledgeBase'"
                 icon="lucide:search"
                 class="mt-0.5 h-4 w-4 shrink-0 text-blue-500"
               />
@@ -532,13 +626,18 @@ onUnmounted(() => {
               />
               <Icon v-else icon="lucide:wrench" class="mt-0.5 h-4 w-4 shrink-0 text-text-muted" />
               <div class="min-w-0 flex-1">
-                <div class="text-[13px] font-medium text-text-primary">
+                <div class="flex items-center gap-2 text-[13px] font-medium text-text-primary">
                   <template v-if="step.toolName === 'searchKnowledgeBase'"> 搜索知识库 </template>
                   <template v-else-if="step.toolName === 'gradeAnswer'"> 评估考生回答 </template>
-                  <template v-else>
-                    {{ step.toolName }}
-                  </template>
+                  <template v-else>{{ step.toolName }}</template>
+                  <span
+                    v-if="step.status === 'running'"
+                    class="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-normal text-primary"
+                    >执行中</span
+                  >
+                  <Icon v-else icon="lucide:check-circle" class="h-3.5 w-3.5 text-emerald-500" />
                 </div>
+                <!-- 工具参数 -->
                 <div class="mt-0.5 text-[12px] leading-relaxed text-text-muted">
                   <template v-if="step.toolName === 'searchKnowledgeBase'">
                     查询词：<span class="text-text-secondary">{{ step.args?.query || '—' }}</span>
@@ -550,6 +649,13 @@ onUnmounted(() => {
                   <template v-else>
                     <code class="text-[11px]">{{ JSON.stringify(step.args) }}</code>
                   </template>
+                </div>
+                <!-- 工具执行结果预览（完成后展示） -->
+                <div
+                  v-if="step.status === 'done' && step.result"
+                  class="mt-1.5 rounded-md bg-surface-input px-2.5 py-1.5 text-[12px] leading-relaxed text-text-secondary border border-border/50"
+                >
+                  {{ step.result.slice(0, 200) }}{{ step.result.length > 200 ? '...' : '' }}
                 </div>
               </div>
               <span class="shrink-0 text-[11px] text-text-muted">#{{ si + 1 }}</span>

@@ -1,15 +1,17 @@
-# Intervy - AI 面试助手
+# Intervy — AI 智能面试官
 
-基于 Vue 3 + Express 的全栈 AI 应用，专注于前端开发工程师面试练习。支持 AI 自由对话、AI 模拟面试、知识库管理和面试历史统计。
+面向开发者的 AI 面试练习平台。支持 Agent 自主追问、知识库 RAG 检索增强、三级面试评估。
 
 ## 功能特性
 
-- **AI 对话** — 基于 DeepSeek 的实时流式聊天（SSE），支持多会话管理、消息编辑、重新生成、撤销删除（5 秒内可恢复）
-- **AI 模拟面试** — 三种出题方式：内置题库（HTML/CSS/JS/Vue/React/工程化，6 类共 4 种预设）、文件上传出题（PDF/Word/TXT）、知识库出题。支持多轮追问深度评估，自动评分并导出面试报告
-- **知识库管理** — 创建知识库、上传文档（PDF/Word/TXT），基于知识库内容 AI 生成面试题
-- **面试统计** — 历史面试记录仪表盘，雷达图展示知识点得分分布，支持 Markdown / 文本 / JSON 格式导出
-- **深色/浅色主题** — 支持主题切换，防闪烁启动
-- **移动端适配** — 响应式布局，侧边栏可折叠，移动端抽屉菜单
+- **AI 对话** — DeepSeek SSE 流式聊天，多会话管理、重新生成、Stop 秒级中断
+- **Agent 自主面试** — LLM 持有知识库搜索、评分、追问出题三项工具，自主决策追问或结束
+- **RAG 检索增强** — 上传 PDF/Word/文本 → 语义分块 → BGE 向量化 → LanceDB 入库 → 面试时精准引用
+- **三级评估** — 单次评分（5 维 + 改进建议）/ 多轮追问 / Agent 全自主，按需选择深度
+- **内置题库** — HTML/CSS/JS/Vue/React/工程化 6 类，分层随机抽样（40%/40%/20%）
+- **面试统计** — 历史记录仪表盘，分数趋势图 + 能力雷达图 + 薄弱点分析 + 多格式导出
+- **知识库管理** — 文件上传、在线编辑、AI 自动出题、增量重索引
+- **深色/浅色主题** — 防闪烁启动，响应式布局，语音输入
 
 ## 技术栈
 
@@ -114,10 +116,17 @@ aichat/
 │   ├── services/
 │   │   ├── deepseek.js                # ★ streamChat — 流式调 DeepSeek（AsyncGenerator）
 │   │   ├── aiCompletions.js           # ★ callAI — 非流式调 DeepSeek → extractJson → JSON.parse
+│   │   ├── agent.js                   # ★ Agent 面试评估 + KB 出题 + reindex
+│   │   ├── rag.js                     # ★ RAG 查询：embed → 检索 → 拼接 prompt → 流式生成
+│   │   ├── chunker.js                 # ★ 语义边界滑动窗口分块
+│   │   ├── embedding.js               # ★ OpenAI 兼容 Embeddings API
+│   │   ├── vectorStore.js             # ★ LanceDB 向量存储（增删查）
 │   │   └── errorHandler.js            # ★ handleAIError — 统一 AI 错误响应
 │   ├── utils/
+│   │   ├── agentLoop.js               # ★ 通用 LLM + Tool-Use 循环引擎
 │   │   ├── parseJson.js               # ★ extractJson — 从 AI 原始返回中提取 JSON 块
 │   │   ├── validate.js                # ★ sanitizeString / validateEnum / clampNumber
+│   │   ├── normalizeText.js           # PDF 文本清理
 │   │   └── constants.js               # DIFFICULTY_MAP（难度分布描述）
 │   └── data/
 │       └── knowledge/                 # ★ 知识库文件存储
@@ -169,14 +178,15 @@ aichat/
          → JSON.parse()
 ```
 
-### 四种 AI 交互模式
+### 五种 AI 交互模式
 
 | 模式 | 接口 | 流式 | 用途 |
 |------|------|:--:|------|
 | SSE 聊天 | `POST /api/chat` | ✅ | 自由对话，逐 token 推送 |
-| 单次评分 | `POST /api/interview/score` | ❌ | 一题一评，一次返回完整结果 |
-| 多轮追问 | `POST /api/interview/evaluate` | ❌ | AI 决定追问或结束，最多 3 轮（硬编码） |
-| AI 出题 | `POST /api/questions/generate` 等 | ❌ | 返回题目 JSON 数组 |
+| 单次评分 | `POST /api/interview/score` | ❌ | 一题一评，一次返回 5 维分数 |
+| 多轮追问 | `POST /api/interview/evaluate` | ❌ | LLM 自主判断追问或结束，最多 3 轮 |
+| Agent 评估 | `POST /api/interview/agent-evaluate` | ❌ | LLM + 工具调用循环，可搜索 KB、评分、出题 |
+| RAG 检索 | `POST /api/rag/search` | ✅ | 语义检索知识库 → 流式生成回答 |
 
 ### 面试状态机（Interview Store）
 
@@ -209,43 +219,42 @@ src/assets/theme.css        → :root { --color-background: #ffffff }
 
 启动时在 Vue 挂载前读取 localStorage 设置 `html.dark` class，防止浅色主题闪烁。
 
-## 快速开始
+## 快速开始（Docker · 推荐）
+
+```bash
+git clone https://github.com/CC0150/aichat.git && cd aichat
+
+# 配置 API Key
+cp server/.env.example server/.env
+# 编辑 server/.env，填入 DEEPSEEK_API_KEY 和 EMBEDDING_API_KEY
+
+# 一键启动
+docker-compose up -d
+
+# 浏览器打开 http://localhost:3001
+```
+
+### 需要的 API Key
+
+| Key | 用途 | 获取 |
+|-----|------|------|
+| `DEEPSEEK_API_KEY` | 对话 & 面试评分 | [platform.deepseek.com](https://platform.deepseek.com) |
+| `EMBEDDING_API_KEY` | 知识库向量化（RAG） | [siliconflow.cn](https://siliconflow.cn) 或其他兼容接口 |
+
+## 本地开发
 
 ### 环境要求
 
 - Node.js 18+
-- DeepSeek API Key
+- 以上两个 API Key
 
-### 安装
+### 安装与运行
 
 ```bash
+# 根目录安装前端依赖
 npm install
 cd server && npm install && cd ..
-```
 
-### 配置
-
-在 `server/.env` 中配置：
-
-```env
-DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
-DEEPSEEK_MODEL=deepseek-v4-flash
-PORT=3001
-```
-
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `DEEPSEEK_API_KEY` | DeepSeek API 密钥（必填） | — |
-| `DEEPSEEK_BASE_URL` | API 基础地址 | `https://api.deepseek.com/v1` |
-| `DEEPSEEK_MODEL` | 默认模型（仅 `deepseek-v4-flash` / `deepseek-v4-pro`） | `deepseek-v4-flash` |
-| `PORT` | 后端服务端口 | `3001` |
-
-### 运行
-
-需要同时启动两个服务：
-
-```bash
 # 终端 1 — 后端（端口 3001）
 cd server && npm run dev
 
@@ -253,7 +262,31 @@ cd server && npm run dev
 npm run dev
 ```
 
-Vite 将 `/api` 请求代理到 `localhost:3001`（见 `vite.config.js`），前后端必须同时运行。
+浏览器访问 `http://localhost:5173`，Vite 自动代理 `/api` 到 `localhost:3001`。
+
+### 配置
+
+在 `server/.env` 中配置（完整模板见 `server/.env.example`）：
+
+```env
+DEEPSEEK_API_KEY=sk-xxx
+DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+DEEPSEEK_MODEL=deepseek-v4-flash
+PORT=3001
+EMBEDDING_BASE_URL=https://api.siliconflow.cn/v1
+EMBEDDING_MODEL=BAAI/bge-large-zh-v1.5
+EMBEDDING_API_KEY=sk-xxx
+```
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `DEEPSEEK_API_KEY` | DeepSeek API 密钥（必填） | — |
+| `DEEPSEEK_BASE_URL` | API 基础地址 | `https://api.deepseek.com/v1` |
+| `DEEPSEEK_MODEL` | 默认模型（仅 `deepseek-v4-flash` / `deepseek-v4-pro`） | `deepseek-v4-flash` |
+| `EMBEDDING_BASE_URL` | Embedding API 地址（必填） | — |
+| `EMBEDDING_MODEL` | Embedding 模型 | `BAAI/bge-large-zh-v1.5` |
+| `EMBEDDING_API_KEY` | Embedding API 密钥（必填） | — |
+| `PORT` | 后端服务端口 | `3001` |
 
 ### 构建
 
@@ -320,9 +353,7 @@ server/data/knowledge/
         └── ...
 ```
 
-文件上传流程：前端 `docParser.js` 解析（PDF/Word/TXT）→ 纯文本 → `POST /api/knowledge/:id/files` → 服务端写入 `.txt`。
-
-> 当前限制：文件内容超过 10,000 字符时会被硬截断。后续计划通过 RAG（检索增强生成）解决。
+文件上传流程：前端 `docParser.js` 解析（PDF/Word/TXT）→ 纯文本 → `POST /api/knowledge/:id/files` → 服务端自动触发 RAG 管线（分块 → 向量化 → LanceDB 入库）。
 
 ## 其他说明
 

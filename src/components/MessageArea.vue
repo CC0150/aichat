@@ -1,10 +1,13 @@
-<script setup>
+<script setup lang="ts">
+// @ts-nocheck
 import { ref, computed, shallowRef, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { isAbortError } from '@/utils'
 import { requestChatStream } from '@/utils'
+import { requestRagStream } from '@/utils/ragApi'
+import { useScrollStabilizer } from '@/composables/useVirtualScrollHeight'
 import MarkdownContent from './MarkdownContent.vue'
 import Modal from './Modal.vue'
 
@@ -18,7 +21,7 @@ const chatStore = useChatStore()
 const appStore = useAppStore()
 
 /** 虚拟滚动组件 DynamicScroller 的引用 */
-const scrollerRef = ref(null)
+const scrollerRef = ref<any>(null)
 /** 是否应自动滚动到底部（用户在底部附近时自动跟随，手动上滑后暂停） */
 const shouldAutoScroll = ref(true)
 /** 判定"在底部附近"的阈值（px），在此范围内视为底部，继续自动滚动 */
@@ -27,7 +30,7 @@ const AUTO_SCROLL_THRESHOLD_PX = 120
 /** 编辑消息弹窗是否可见 */
 const isEditModalOpen = ref(false)
 /** 正在编辑的消息在消息列表中的索引 */
-const editingMessageIndex = ref(null)
+const editingMessageIndex = ref<any>(null)
 /** 编辑弹窗中的消息内容 */
 const editingContent = ref('')
 
@@ -42,9 +45,9 @@ const isGenerating = ref(false)
 /** 删除本轮对话确认弹窗是否可见 */
 const isDeleteModalOpen = ref(false)
 /** 待删除的消息索引 */
-const deletingTurnIndex = ref(null)
+const deletingTurnIndex = ref<any>(null)
 /** 待删除的消息类型：'user' 或 'assistant' */
-const deletingTurnType = ref(null)
+const deletingTurnType = ref<any>(null)
 
 watch(
   () => props.showRenameModal,
@@ -98,42 +101,37 @@ function onSuggest(s) {
   emit('sendMessage', s.label)
 }
 
-/** 上次滚动 RAF 的 ID，用于取消重复排队 */
-let scrollRafId = null
+// ===== 虚拟滚动增强：双 RAF 稳定滚动 + 切对话首帧等待 =====
+const {
+  ready: scrollerReady,
+  scrollToBottomStable,
+  markReadyAfterFirstMeasure,
+} = useScrollStabilizer(scrollerRef)
 
 /**
- * 强制滚动到底部（使用 RAF 确保 DOM 更新后执行）
- * 取消之前的滚动 RAF 避免重复排队
+ * 安全滚动到底部 —— 双 RAF 等 DynamicScroller 内部 ResizeObserver 完成测量，
+ * 解决流式输出期间 scrollTo 和 ResizeObserver 的竞态抖动问题。
  */
 function scrollToBottomForce() {
-  if (scrollRafId) cancelAnimationFrame(scrollRafId)
-  scrollRafId = requestAnimationFrame(() => {
-    const scroller = scrollerRef.value
-    if (scroller?.$el) {
-      const el = scroller.$el
-      el.scrollTop = el.scrollHeight
-    }
-  })
+  scrollToBottomStable()
 }
 
 /** 自动滚动：仅在 shouldAutoScroll 为 true 时执行（用户手动上滑后暂停） */
 function scrollToBottom() {
   nextTick(() => {
     if (!shouldAutoScroll.value) return
-    scrollToBottomForce()
+    scrollToBottomStable()
   })
 }
 
 /**
  * 进入对话时强制滚到底部
- * 连续两次 RAF 确保虚拟滚动组件完成渲染后再滚动
+ * 先标记"等待首帧测量"，双 RAF 稳定后再滚
  */
 function scrollToBottomOnEnter() {
   shouldAutoScroll.value = true
-  nextTick(() => {
-    scrollToBottomForce()
-    requestAnimationFrame(() => scrollToBottomForce())
-  })
+  markReadyAfterFirstMeasure()
+  scrollToBottomStable()
 }
 
 /** 判断滚动容器是否在底部附近（阈值内视为"在底部"） */
@@ -181,7 +179,7 @@ function bindScrollerDomScroll() {
 async function copyToClipboard(text) {
   try {
     await navigator.clipboard.writeText(text)
-  } catch (_) {}
+  } catch (_: any) {}
 }
 
 /**
@@ -207,7 +205,7 @@ function getUserImages(message) {
 /** 图片全屏预览是否可见 */
 const isImagePreviewOpen = ref(false)
 /** 当前预览的图片对象 { url, name } */
-const previewImage = ref(null)
+const previewImage = ref<any>(null)
 
 /** 打开图片全屏预览 */
 function openImagePreview(img) {
@@ -280,21 +278,29 @@ async function regenerate(index) {
     // 清空当前 assistant 消息，准备接收新内容
     chatStore.setLastAssistantMessage('')
 
-    await requestChatStream({
-      model: modelConfig.model,
-      messages: [
-        {
-          role: 'user',
-          content:
-            typeof userMessage.content === 'string'
-              ? userMessage.content
-              : (userMessage.content?.text ?? ''),
-        },
-      ],
-      onChunk: (content) => chatStore.appendToLastMessage(content),
-      onError: (msg) => chatStore.setLastAssistantMessage(`Error: ${msg}`),
-      signal: controller.signal,
-    })
+    // 提取用户消息的纯文本和可能的 kbId（KB 模式时会附带）
+    const msgContent = userMessage.content
+    const isObject = msgContent && typeof msgContent === 'object' && !Array.isArray(msgContent)
+    const text =
+      typeof msgContent === 'string' ? msgContent : isObject ? (msgContent.text ?? '') : ''
+    const kbId = isObject ? msgContent.kbId : null
+
+    if (kbId) {
+      await requestRagStream({
+        query: text,
+        kbId,
+        model: modelConfig.model,
+        onChunk: (chunk: string) => chatStore.appendToLastMessage(chunk),
+        onError: (msg: string) => chatStore.setLastAssistantMessage(`Error: ${msg}`),
+        signal: controller.signal,
+      })
+    } else {
+      await requestChatStream(modelConfig.model, [{ role: 'user', content: text }], {
+        onChunk: (content: string) => chatStore.appendToLastMessage(content),
+        onError: (msg: string) => chatStore.setLastAssistantMessage(`Error: ${msg}`),
+        signal: controller.signal,
+      })
+    }
   } catch (error) {
     // 用户主动中止时不报错
     if (controller.signal.aborted || isAbortError(error)) return
@@ -595,7 +601,7 @@ onUnmounted(() => {
                     class="min-w-0 rounded-2xl rounded-bl-md bg-surface-elevated px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm ring-1 ring-border"
                   >
                     <div v-if="item.content && item.content.trim().length">
-                      <MarkdownContent :content="item.content" />
+                      <MarkdownContent :content="item.content" :visible="active" />
                     </div>
                     <!-- Thinking state -->
                     <div v-else class="flex items-center gap-2 py-1 text-sm text-text-muted">
