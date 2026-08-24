@@ -11,14 +11,16 @@ export async function apiRequest(
   } = {},
 ): Promise<any> {
   const { method = 'GET', body, headers, signal, ...rest } = options
+  const isFormData = body instanceof FormData
   const fetchOptions: RequestInit & { headers: Record<string, string> } = {
     method,
-    headers: { 'Content-Type': 'application/json', ...headers },
+    // FormData 让浏览器自动设置 multipart boundary，不能手写 Content-Type
+    headers: isFormData ? { ...headers } : { 'Content-Type': 'application/json', ...headers },
     signal,
     ...rest,
   }
   if (body != null) {
-    fetchOptions.body = JSON.stringify(body)
+    fetchOptions.body = isFormData ? body : JSON.stringify(body)
   }
 
   let response: Response

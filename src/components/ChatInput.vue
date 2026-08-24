@@ -11,7 +11,7 @@ import { requestChatStream, autoResize as autoResizeTextarea, isAbortError } fro
 import { buildMessagesWithContext, trimByTokenBudget } from '@/utils/messageBuilder'
 import { requestRagStream } from '@/utils/ragApi'
 import { difficultyMap } from '@/utils/interviewHelpers'
-import { parseFile } from '@/utils/docParser'
+import { parseFiles } from '@/utils/fileApi'
 import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
 import { watch } from 'vue'
 
@@ -105,22 +105,22 @@ async function handleFileChange(event) {
   }
 
   const filesToProcess = files.slice(0, remaining)
-  for (const file of filesToProcess) {
-    try {
-      const parsed = await parseFile(file)
-      if (parsed.text) {
+  try {
+    const parsed = await parseFiles(filesToProcess)
+    for (const p of parsed) {
+      if (p.text) {
         attachments.value.push({
           // 用时间戳+文件名+随机串保证唯一 ID，防止同名文件冲突
-          id: `${Date.now()}-${file.name}-${Math.random().toString(36).slice(2, 8)}`,
-          name: parsed.name,
-          text: parsed.text,
-          type: parsed.type,
+          id: `${Date.now()}-${p.name}-${Math.random().toString(36).slice(2, 8)}`,
+          name: p.name,
+          text: p.text,
+          type: p.type,
         })
       }
-    } catch (err) {
-      console.error(err)
-      alert(err?.message || `Failed to parse: ${file.name}`)
     }
+  } catch (err) {
+    console.error(err)
+    alert(err?.message || `文件解析失败`)
   }
 
   event.target.value = ''

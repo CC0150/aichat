@@ -3,7 +3,6 @@
 import { ref, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
-import { parseFile } from '@/utils/docParser'
 import { reindexKB } from '@/utils/knowledgeApi'
 import { useToast } from '@/composables/useToast'
 import Modal from '@/components/Modal.vue'
@@ -153,9 +152,7 @@ function triggerUpload() {
 
 /**
  * 处理文件上传到知识库
- * 1. 客户端解析文件内容（PDF/Word/TXT）
- * 2. 内容需 >= 50 字才接受
- * 3. 上传到服务器后刷新详情列表
+ * 前端只传原始文件，解析在服务端；内容过短由服务端返回 400
  */
 async function handleFileUpload(event) {
   const files = Array.from(event.target.files || [])
@@ -164,16 +161,7 @@ async function handleFileUpload(event) {
   isParsing.value = true
   uploadError.value = ''
   try {
-    const parsed = await parseFile(file)
-    if (!parsed.text || parsed.text.trim().length < 50) {
-      uploadError.value = '文件内容过短（不足 50 字），请上传更丰富的文档。'
-      return
-    }
-    await store.uploadFile(detailKbId.value, {
-      name: parsed.name,
-      type: parsed.type,
-      content: parsed.text,
-    })
+    await store.uploadFile(detailKbId.value, file)
     // 刷新详情以展示新上传的文件
     await store.fetchKB(detailKbId.value)
   } catch (err: any) {

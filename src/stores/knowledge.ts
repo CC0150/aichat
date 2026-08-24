@@ -84,26 +84,23 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     }
   }
 
-  /** 上传文件到知识库 */
-  async function uploadFile(
-    kbId: string,
-    { name, type, content }: { name: string; type: string; content: string },
-  ): Promise<any> {
+  /** 上传文件到知识库（传原始文件，服务端解析） */
+  async function uploadFile(kbId: string, file: File): Promise<any> {
     loading.value = true
     error.value = ''
     try {
-      const file = await uploadFileToKB(kbId, { name, type, content })
+      const fileRecord = await uploadFileToKB(kbId, file)
       // 更新当前详情
       if (currentKB.value && currentKB.value.id === kbId) {
         if (!currentKB.value.files) currentKB.value.files = []
-        currentKB.value.files.push(file)
+        currentKB.value.files.push(fileRecord)
       }
       // 更新列表中的 fileCount
       const idx = kbs.value.findIndex((k) => k.id === kbId)
       if (idx !== -1) {
         kbs.value[idx].fileCount = (kbs.value[idx].fileCount || 0) + 1
       }
-      return file
+      return fileRecord
     } catch (err: any) {
       error.value = err.message || '上传失败'
       throw err

@@ -7,7 +7,7 @@ import { useInterviewStore } from '@/stores/interview'
 import { useAppStore } from '@/stores/app'
 import { interviewTypes } from '@/data/questions/index'
 import { requestGenerateQuestions, requestGenerateQuestionsByRole } from '@/utils/interviewApi'
-import { parseFile } from '@/utils/docParser'
+import { parseFiles } from '@/utils/fileApi'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import { agentGenerateFromKB, createKnowledgeBase, uploadFileToKB } from '@/utils/knowledgeApi'
 import InterviewSession from '@/components/interview/InterviewSession.vue'
@@ -146,12 +146,12 @@ async function handleFileUpload(event) {
   isParsing.value = true
   fileError.value = ''
   try {
-    const parsed = await parseFile(file)
+    const parsed = (await parseFiles([file]))[0]
     if (!parsed.text || parsed.text.trim().length < 50) {
       fileError.value = '文件内容过短（不足 50 字），无法生成有效题目。请上传内容更丰富的文档。'
       uploadedFile.value = null
     } else {
-      uploadedFile.value = parsed
+      uploadedFile.value = { ...parsed, file }
     }
   } catch (err: any) {
     fileError.value = err.message || '文件解析失败，请重试'
@@ -227,11 +227,7 @@ async function startKBInterview() {
         name: uploadedFile.value.name,
         description: '快速上传',
       })
-      await uploadFileToKB(kb.id, {
-        name: uploadedFile.value.name,
-        type: uploadedFile.value.type,
-        content: uploadedFile.value.text,
-      })
+      await uploadFileToKB(kb.id, uploadedFile.value.file)
       // 刷新 KB 列表
       await knowledgeStore.fetchKBs()
       selectedKBId.value = kb.id

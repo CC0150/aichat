@@ -28,12 +28,11 @@ export function fetchKnowledgeBase(id: string): Promise<any> {
   return apiRequest(`/api/knowledge/${id}`)
 }
 
-/** 上传文件到知识库 */
-export function uploadFileToKB(
-  id: string,
-  body: { name: string; content: string; type?: string },
-): Promise<any> {
-  return apiRequest(`/api/knowledge/${id}/files`, { method: 'POST', body })
+/** 上传原始文件到知识库（服务端解析） */
+export function uploadFileToKB(id: string, file: File): Promise<any> {
+  const form = new FormData()
+  form.append('file', file)
+  return apiRequest(`/api/knowledge/${id}/files`, { method: 'POST', body: form })
 }
 
 /** 从知识库删除文件 */
