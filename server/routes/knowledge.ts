@@ -12,6 +12,8 @@ import { getEmbedding } from '../services/embedding'
 import { addChunks, deleteByKB, deleteByFile } from '../services/vectorStore'
 import { normalizeText } from '../utils/normalizeText'
 import { agentGenerateQuestions, reindexKB } from '../services/agent'
+import { parseFile } from '../utils/fileParser'
+import { parseUpload, uploadErrorHandler } from '../middleware/upload'
 
 const router = Router()
 
@@ -261,72 +263,86 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 })
 
-/** POST /api/knowledge/:id/files — 上传文件到知识库 */
-router.post('/:id/files', async (req: Request, res: Response) => {
-  const { id } = req.params as { id: string }
-  const userId = req.userId as number
-  const name = sanitizeString(req.body?.name, { maxLength: 200 })
-  const type = sanitizeString(req.body?.type, { maxLength: 20, required: false }) || 'text'
-  const content = sanitizeString(req.body?.content, { maxLength: 100000 })
-
-  if (!name || !content) {
-    return res.status(400).json({ error: '文件名和内容不能为空' })
-  }
-
-  try {
-    const meta = await getOwnedMeta(userId, id)
-    if (!meta) return res.status(404).json({ error: '知识库不存在' })
-
-    const fileId = `f-${Date.now()}`
-    // 清洗 PDF 解析乱码
-    const cleanedContent = type === 'pdf' ? normalizeText(content) : content
-    const fileRecord = {
-      id: fileId,
-      name,
-      type,
-      charCount: cleanedContent.length,
-      uploadedAt: new Date().toISOString(),
+/** POST /api/knowledge/:id/files — 上传原始文件到知识库（服务端解析） */
+router.post(
+  '/:id/files',
+  parseUpload.single('file'),
+  async (req: Request, res: Response) => {
+    const { id } = req.params as { id: string }
+    const userId = req.userId as number
+    const file = req.file as Express.Multer.File | undefined
+    if (!file) {
+      res.status(400).json({ error: '缺少文件' })
+      return
     }
 
-    await writeFileContent(id, fileId, cleanedContent)
-    meta.files.push(fileRecord)
-    await writeMeta(id, meta)
-
-    // RAG 入库：语义分块 → embedding → 存向量库（异步，不阻塞接口响应）
-    setImmediate(async () => {
-      try {
-        const chunks = await chunkSemantic(cleanedContent, { chunkSize: 500, overlap: 100 })
-        if (chunks.length === 0) return
-        const vectors = await getEmbedding(chunks)
-        await addChunks(
-          chunks.map((text, i) => ({
-            vector: vectors[i],
-            text,
-            id: `chunk-${fileId}-${i}`,
-            kbId: id,
-            fileId,
-            userId,
-          })),
-        )
-        console.log(`[knowledge] RAG 入库完成: ${fileId} → ${chunks.length} 个 chunk`)
-      } catch (err: any) {
-        console.error(`[knowledge] RAG 入库失败 ${fileId}:`, err.message)
+    try {
+      const meta = await getOwnedMeta(userId, id)
+      if (!meta) {
+        res.status(404).json({ error: '知识库不存在' })
+        return
       }
-    })
 
-    const list = await readIndex()
-    const idx = list.findIndex((kb: any) => kb.id === id)
-    if (idx !== -1) {
-      list[idx].fileCount = meta.files.length
-      await writeIndex(list)
+      const parsed = await parseFile(file.originalname, file.buffer, file.mimetype)
+      if (parsed.text.length < 50) {
+        res.status(400).json({ error: '文件内容过短（不足 50 字），请上传更丰富的文档。' })
+        return
+      }
+
+      const name = sanitizeString(parsed.name, { maxLength: 200 }) || '未命名文档'
+      const fileId = `f-${Date.now()}`
+      // 清洗 PDF 解析乱码
+      const cleanedContent = parsed.type === 'pdf' ? normalizeText(parsed.text) : parsed.text
+      const fileRecord = {
+        id: fileId,
+        name,
+        type: parsed.type,
+        size: parsed.size,
+        charCount: cleanedContent.length,
+        uploadedAt: new Date().toISOString(),
+      }
+
+      await writeFileContent(id, fileId, cleanedContent)
+      meta.files.push(fileRecord)
+      await writeMeta(id, meta)
+
+      // RAG 入库：语义分块 → embedding → 存向量库（异步，不阻塞接口响应）
+      setImmediate(async () => {
+        try {
+          const chunks = await chunkSemantic(cleanedContent, { chunkSize: 500, overlap: 100 })
+          if (chunks.length === 0) return
+          const vectors = await getEmbedding(chunks)
+          await addChunks(
+            chunks.map((text, i) => ({
+              vector: vectors[i],
+              text,
+              id: `chunk-${fileId}-${i}`,
+              kbId: id,
+              fileId,
+              userId,
+            })),
+          )
+          console.log(`[knowledge] RAG 入库完成: ${fileId} → ${chunks.length} 个 chunk`)
+        } catch (err: any) {
+          console.error(`[knowledge] RAG 入库失败 ${fileId}:`, err.message)
+        }
+      })
+
+      const list = await readIndex()
+      const idx = list.findIndex((kb: any) => kb.id === id)
+      if (idx !== -1) {
+        list[idx].fileCount = meta.files.length
+        await writeIndex(list)
+      }
+
+      res.json(fileRecord)
+    } catch (err: any) {
+      console.error('[knowledge] 上传文件失败:', err.message)
+      res.status(400).json({ error: err.message || '上传文件失败' })
     }
-
-    res.json(fileRecord)
-  } catch (err: any) {
-    console.error('[knowledge] 上传文件失败:', err.message)
-    res.status(500).json({ error: '上传文件失败' })
-  }
-})
+  },
+  uploadErrorHandler,
+)
 
 /** DELETE /api/knowledge/:id/files/:fileId — 删除文件 */
 router.delete('/:id/files/:fileId', async (req: Request, res: Response) => {

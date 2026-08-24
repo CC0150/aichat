@@ -5,6 +5,7 @@ import interviewRouter from './interview'
 import questionsRouter from './questions'
 import knowledgeRouter from './knowledge'
 import ragRouter from './rag'
+import parseRouter from './parse'
 import healthRouter from './health'
 import { requireAuth } from '../middleware/auth'
 
@@ -21,5 +22,6 @@ export function setupRoutes(app: Express): void {
   app.use('/api/questions', questionsRouter)
   app.use('/api/knowledge', knowledgeRouter)
   app.use('/api/rag', ragRouter)
+  app.use('/api/parse', parseRouter)
   app.use('/health', healthRouter)
 }
