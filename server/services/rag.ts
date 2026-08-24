@@ -32,15 +32,15 @@ const RERANK_CANDIDATE_COUNT = 20
  */
 export async function* ragQuery(
   userQuery: string,
-  { kbId, model = 'deepseek-v4-pro', topK = 5, rerank = true }: RagQueryOptions = {},
+  { userId, kbId, model = 'deepseek-v4-pro', topK = 5, rerank = true }: RagQueryOptions = {},
   signal?: AbortSignal,
 ): AsyncGenerator<string> {
   // Step 1: 把用户问题转成向量
   const [queryVector] = await getEmbedding([userQuery], signal)
 
-  // Step 2: 向量检索 —— 重排模式下多召回一些候选
+  // Step 2: 向量检索 —— 重排模式下多召回一些候选；按 userId 隔离
   const searchLimit = rerank ? RERANK_CANDIDATE_COUNT : topK
-  let chunks = await search(queryVector, { kbId, limit: searchLimit })
+  let chunks = await search(queryVector, { userId, kbId, limit: searchLimit })
 
   // Step 3: 可选重排序 —— 用 LLM 对候选块做相关度打分，精选 topK
   if (rerank && chunks.length > topK) {

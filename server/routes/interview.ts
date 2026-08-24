@@ -193,6 +193,7 @@ router.post('/agent-evaluate', async (req: Request, res: Response) => {
       answerPoints,
       conversationHistory,
       kbId,
+      userId: req.userId as number,
       model,
     })
     res.json(result)
@@ -248,6 +249,7 @@ router.post('/agent-evaluate-stream', async (req: Request, res: Response) => {
       answerPoints,
       conversationHistory,
       kbId,
+      userId: req.userId as number,
       model,
       signal: controller.signal,
     })) {

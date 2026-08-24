@@ -84,6 +84,7 @@ const tools: ToolDefinition[] = [
 ]
 
 interface SearchKBOpts {
+  userId?: number
   kbId?: string
   limit?: number
 }
@@ -93,11 +94,11 @@ interface SearchKBOpts {
  */
 async function searchKB(
   query: string,
-  { kbId, limit = 5 }: SearchKBOpts = {},
+  { userId, kbId, limit = 5 }: SearchKBOpts = {},
   signal?: AbortSignal,
 ): Promise<string> {
   const [qv] = await getEmbedding([query || ''], signal)
-  const chunks = await search(qv, { kbId, limit })
+  const chunks = await search(qv, { userId, kbId, limit })
   if (!chunks.length) return '知识库中未找到相关内容。'
   return chunks.map((c: any, i: number) => `[资料${i + 1}] ${c.text}`).join('\n\n')
 }
@@ -106,10 +107,11 @@ async function executeTool(
   name: string,
   args: Record<string, unknown>,
   signal?: AbortSignal,
+  userId?: number,
 ): Promise<string> {
   switch (name) {
     case 'searchKnowledgeBase':
-      return searchKB(String(args.query || ''), { limit: 5 }, signal)
+      return searchKB(String(args.query || ''), { userId, limit: 5 }, signal)
 
     case 'gradeAnswer': {
       const result = await callAI({
@@ -160,6 +162,7 @@ interface InterviewEvaluateParams {
   answerPoints: string[] | string
   conversationHistory?: Array<{ role: string; content: string }>
   kbId?: string
+  userId?: number
   model?: string
   signal?: AbortSignal
 }
@@ -172,6 +175,7 @@ export async function runInterviewEvaluate({
   answerPoints,
   conversationHistory = [],
   kbId,
+  userId,
   model = 'deepseek-v4-pro',
 }: InterviewEvaluateParams): Promise<AgentEvaluateResult> {
   const pointsText = Array.isArray(answerPoints)
@@ -214,7 +218,7 @@ ${historyText}
 
   const { text, steps }: AgentLoopResult = await agentLoop({
     tools,
-    executeTool,
+    executeTool: (name, args, signal) => executeTool(name, args, signal, userId),
     model,
     system,
     messages: [
@@ -291,6 +295,7 @@ export async function* runInterviewEvaluateStream({
   answerPoints,
   conversationHistory = [],
   kbId,
+  userId,
   model = 'deepseek-v4-pro',
   signal,
 }: InterviewEvaluateParams): AsyncGenerator<AgentStreamEvent> {
@@ -335,7 +340,7 @@ ${historyText}
   // 委托给流式 Agent 循环
   for await (const event of agentLoopStream({
     tools,
-    executeTool,
+    executeTool: (name, args, signal) => executeTool(name, args, signal, userId),
     model,
     system,
     messages: [
@@ -406,6 +411,7 @@ ${historyText}
 
 interface AgentGenerateQuestionsParams {
   kbId: string
+  userId?: number
   count?: number
   difficulty?: string
   model?: string
@@ -422,6 +428,7 @@ interface AgentGenerateQuestionsResult {
  */
 export async function agentGenerateQuestions({
   kbId,
+  userId,
   count = 5,
   difficulty = 'medium',
   model = 'deepseek-v4-pro',
@@ -443,7 +450,7 @@ export async function agentGenerateQuestions({
 
   async function qExecuteTool(name: string, args: Record<string, unknown>): Promise<string> {
     if (name === 'searchKnowledgeBase') {
-      return searchKB(String(args.query || ''), { kbId, limit: 10 })
+      return searchKB(String(args.query || ''), { userId, kbId, limit: 10 })
     }
     return '未知工具'
   }
@@ -505,23 +512,27 @@ interface ReindexResult {
 
 /**
  * 重新索引知识库（重新切块 + embedding + 入库）
+ * userId 用于归属校验，非本人按"不存在"处理
  */
-export async function reindexKB(kbId: string): Promise<ReindexResult> {
+export async function reindexKB(userId: number, kbId: string): Promise<ReindexResult> {
   const kbDir = path.join(__dirname, '..', 'data', 'knowledge', kbId)
   const metaPath = path.join(kbDir, 'meta.json')
 
-  let meta: { files?: Array<{ id: string }> }
+  let meta: { files?: Array<{ id: string }>; ownerId?: number }
   try {
     meta = JSON.parse(await fs.readFile(metaPath, 'utf-8'))
   } catch {
+    return { error: '知识库不存在' }
+  }
+  if (meta.ownerId !== userId) {
     return { error: '知识库不存在' }
   }
 
   const files = meta.files || []
   if (!files.length) return { error: '知识库中没有文件' }
 
-  // 清旧向量
-  await deleteByKB(kbId)
+  // 清旧向量（限定归属）
+  await deleteByKB(kbId, userId)
 
   let totalChunks = 0
   for (const file of files) {
@@ -537,6 +548,7 @@ export async function reindexKB(kbId: string): Promise<ReindexResult> {
           id: `chunk-${file.id}-${i}`,
           kbId,
           fileId: file.id,
+          userId,
         })),
       )
       totalChunks += chunks.length

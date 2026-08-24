@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express'
 import fs from 'fs/promises'
 import path from 'path'
+import { db } from '../db'
 import { DEFAULT_MODEL } from '../config'
 import { callAI } from '../services/aiCompletions'
 import { handleAIError } from '../services/errorHandler'
@@ -88,12 +89,63 @@ async function deleteKBDir(kbId: string): Promise<void> {
   }
 }
 
+// ===== 归属校验与迁移 =====
+
+/** 读取 meta 并校验归属；不存在或非本人返回 null */
+export async function getOwnedMeta(userId: number, id: string): Promise<any | null> {
+  const meta = await readMeta(id)
+  if (!meta || meta.ownerId !== userId) return null
+  return meta
+}
+
+/** 当前用户的 KB 列表（过滤归属） */
+async function listOwned(userId: number): Promise<any[]> {
+  const list = await readIndex()
+  return list.filter((kb: any) => kb.ownerId === userId)
+}
+
+/**
+ * 一次性迁移：把无 ownerId 的存量 KB 认领给第一个注册用户（幂等）。
+ * 启动时调用一次。
+ */
+export async function claimLegacyKBs(): Promise<void> {
+  const index = await readIndex()
+  const hasOwnerless = index.some((kb: any) => kb.ownerId == null)
+  if (!hasOwnerless) return
+  const first = db.prepare('SELECT id FROM users ORDER BY id ASC LIMIT 1').get() as
+    | { id: number }
+    | undefined
+  if (!first) return
+
+  for (const kb of index) {
+    if (kb.ownerId != null) continue
+    const meta = await readMeta(kb.id)
+    if (meta && meta.ownerId == null) {
+      meta.ownerId = first.id
+      await writeMeta(kb.id, meta)
+    }
+    kb.ownerId = first.id
+  }
+  await writeIndex(index)
+  console.log('[knowledge] 存量知识库已认领到首个用户')
+}
+
+/** 构造 kbId → 归属 userId 映射（供向量迁移用） */
+export async function getKBOwnerMap(): Promise<Record<string, number>> {
+  const index = await readIndex()
+  const map: Record<string, number> = {}
+  for (const kb of index) {
+    if (kb.ownerId != null) map[kb.id] = Number(kb.ownerId)
+  }
+  return map
+}
+
 // ===== Routes =====
 
-/** GET /api/knowledge — 列出所有知识库 */
-router.get('/', async (_req: Request, res: Response) => {
+/** GET /api/knowledge — 列出当前用户的知识库 */
+router.get('/', async (req: Request, res: Response) => {
   try {
-    const list = await readIndex()
+    const list = await listOwned(req.userId as number)
     res.json(list)
   } catch (err: any) {
     console.error('[knowledge] 列表读取失败:', err.message)
@@ -111,12 +163,14 @@ router.post('/', async (req: Request, res: Response) => {
   }
 
   try {
+    const ownerId = req.userId as number
     const id = `kb-${Date.now()}`
     const now = new Date().toISOString()
     const meta = {
       id,
       name,
       description,
+      ownerId,
       createdAt: now,
       files: [],
     }
@@ -127,6 +181,7 @@ router.post('/', async (req: Request, res: Response) => {
       id,
       name,
       description,
+      ownerId,
       fileCount: 0,
       createdAt: now,
     })
@@ -142,12 +197,16 @@ router.post('/', async (req: Request, res: Response) => {
 /** DELETE /api/knowledge/:id — 删除知识库 */
 router.delete('/:id', async (req: Request, res: Response) => {
   const { id } = req.params as { id: string }
+  const userId = req.userId as number
   try {
+    if (!(await getOwnedMeta(userId, id))) {
+      return res.status(404).json({ error: '知识库不存在' })
+    }
     await deleteKBDir(id)
-    deleteByKB(id).catch((err: any) =>
+    deleteByKB(id, userId).catch((err: any) =>
       console.error(`[knowledge] 清理向量失败 ${id}:`, err.message),
     )
-    const list = (await readIndex()).filter((kb) => kb.id !== id)
+    const list = (await readIndex()).filter((kb: any) => kb.id !== id)
     await writeIndex(list)
     res.json({ success: true })
   } catch (err: any) {
@@ -166,7 +225,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
   if (!name) return res.status(400).json({ error: '知识库名称不能为空' })
 
   try {
-    const meta = await readMeta(id)
+    const meta = await getOwnedMeta(req.userId as number, id)
     if (!meta) return res.status(404).json({ error: '知识库不存在' })
 
     meta.name = name
@@ -193,7 +252,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   const { id } = req.params as { id: string }
   try {
-    const meta = await readMeta(id)
+    const meta = await getOwnedMeta(req.userId as number, id)
     if (!meta) return res.status(404).json({ error: '知识库不存在' })
     res.json(meta)
   } catch (err: any) {
@@ -205,6 +264,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 /** POST /api/knowledge/:id/files — 上传文件到知识库 */
 router.post('/:id/files', async (req: Request, res: Response) => {
   const { id } = req.params as { id: string }
+  const userId = req.userId as number
   const name = sanitizeString(req.body?.name, { maxLength: 200 })
   const type = sanitizeString(req.body?.type, { maxLength: 20, required: false }) || 'text'
   const content = sanitizeString(req.body?.content, { maxLength: 100000 })
@@ -214,7 +274,7 @@ router.post('/:id/files', async (req: Request, res: Response) => {
   }
 
   try {
-    const meta = await readMeta(id)
+    const meta = await getOwnedMeta(userId, id)
     if (!meta) return res.status(404).json({ error: '知识库不存在' })
 
     const fileId = `f-${Date.now()}`
@@ -245,6 +305,7 @@ router.post('/:id/files', async (req: Request, res: Response) => {
             id: `chunk-${fileId}-${i}`,
             kbId: id,
             fileId,
+            userId,
           })),
         )
         console.log(`[knowledge] RAG 入库完成: ${fileId} → ${chunks.length} 个 chunk`)
@@ -270,9 +331,10 @@ router.post('/:id/files', async (req: Request, res: Response) => {
 /** DELETE /api/knowledge/:id/files/:fileId — 删除文件 */
 router.delete('/:id/files/:fileId', async (req: Request, res: Response) => {
   const { id, fileId } = req.params as { id: string; fileId: string }
+  const userId = req.userId as number
 
   try {
-    const meta = await readMeta(id)
+    const meta = await getOwnedMeta(userId, id)
     if (!meta) return res.status(404).json({ error: '知识库不存在' })
 
     meta.files = meta.files.filter((f: any) => f.id !== fileId)
@@ -280,7 +342,7 @@ router.delete('/:id/files/:fileId', async (req: Request, res: Response) => {
     await deleteFileContent(id, fileId)
 
     // 同步清理向量库
-    deleteByFile(fileId).catch((err: any) =>
+    deleteByFile(fileId, userId).catch((err: any) =>
       console.error(`[knowledge] 清理向量失败 ${fileId}:`, err.message),
     )
 
@@ -337,7 +399,7 @@ router.post('/:id/generate', async (req: Request, res: Response) => {
   const model = sanitizeString(req.body?.model, { required: false }) || DEFAULT_MODEL
 
   try {
-    const meta = await readMeta(id)
+    const meta = await getOwnedMeta(req.userId as number, id)
     if (!meta) return res.status(404).json({ error: '知识库不存在' })
     if (!meta.files || meta.files.length === 0) {
       return res.status(400).json({ error: '知识库中没有文件' })
@@ -412,13 +474,14 @@ router.post('/:id/agent-generate', async (req: Request, res: Response) => {
   const model = sanitizeString(req.body?.model, { required: false }) || DEFAULT_MODEL
 
   try {
-    const meta = await readMeta(id)
+    const meta = await getOwnedMeta(req.userId as number, id)
     if (!meta) return res.status(404).json({ error: '知识库不存在' })
     if (!meta.files || meta.files.length === 0)
       return res.status(400).json({ error: '知识库中没有文件' })
 
     const result = await agentGenerateQuestions({
       kbId: id,
+      userId: req.userId as number,
       count,
       difficulty: difficulty ?? 'all',
       model,
@@ -436,7 +499,7 @@ router.post('/:id/agent-generate', async (req: Request, res: Response) => {
 router.post('/:id/reindex', async (req: Request, res: Response) => {
   const { id } = req.params as { id: string }
   try {
-    const result = await reindexKB(id)
+    const result = await reindexKB(req.userId as number, id)
     if (result.error) return res.status(404).json(result)
     res.json(result)
   } catch (err: any) {

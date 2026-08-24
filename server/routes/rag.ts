@@ -10,10 +10,12 @@ import { Router, type Request, type Response } from 'express'
 import { writeSSEHeaders } from '../middleware'
 import { ragQuery } from '../services/rag'
 import { sanitizeString } from '../utils/validate'
+import { getOwnedMeta } from './knowledge'
 
 const router = Router()
 
 router.post('/search', async (req: Request, res: Response) => {
+  const userId = req.userId as number
   const query = sanitizeString(req.body?.query, { maxLength: 2000 })
   const kbId = sanitizeString(req.body?.kbId, { maxLength: 50, required: false }) || undefined
   const model = sanitizeString(req.body?.model, { maxLength: 50, required: false }) || undefined
@@ -21,6 +23,11 @@ router.post('/search', async (req: Request, res: Response) => {
 
   if (!query) {
     return res.status(400).json({ error: 'query 不能为空' })
+  }
+
+  // 指定知识库时先校验归属，防止越权检索
+  if (kbId && !(await getOwnedMeta(userId, kbId))) {
+    return res.status(404).json({ error: '知识库不存在' })
   }
 
   writeSSEHeaders(res)
@@ -33,7 +40,7 @@ router.post('/search', async (req: Request, res: Response) => {
   res.on('error', () => {})
 
   try {
-    for await (const chunk of ragQuery(query, { kbId, model, topK }, controller.signal)) {
+    for await (const chunk of ragQuery(query, { userId, kbId, model, topK }, controller.signal)) {
       if (controller.signal.aborted) break
       res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`)
     }

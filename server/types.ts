@@ -70,6 +70,7 @@ export interface KBMeta {
   id: string
   name: string
   description?: string
+  ownerId?: number
   createdAt: string
   updatedAt: string
   files: KBFileMeta[]
@@ -82,6 +83,7 @@ export interface VectorChunk {
   id: string
   kbId: string
   fileId: string
+  userId: number
 }
 
 /** 向量搜索结果 */
@@ -166,19 +168,21 @@ export interface SemanticChunkOptions extends ChunkOptions {
   minSentenceLength?: number
 }
 
+/** 向量搜索参数 */
+export interface SearchOptions {
+  userId?: number
+  kbId?: string
+  fileId?: string
+  limit?: number
+}
+
 /** RAG 查询参数 */
 export interface RagQueryOptions {
+  userId?: number
   kbId?: string
   model?: string
   topK?: number
   rerank?: boolean
-}
-
-/** 向量搜索参数 */
-export interface SearchOptions {
-  kbId?: string
-  fileId?: string
-  limit?: number
 }
 
 /** errorHandler 参数 */

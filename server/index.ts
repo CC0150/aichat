@@ -4,6 +4,8 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { PORT, API_KEY } from './config'
 import { setupMiddleware, setupErrorHandler } from './middleware'
 import { setupRoutes } from './routes'
+import { claimLegacyKBs, getKBOwnerMap } from './routes/knowledge'
+import { migrateVectorsIfLegacy } from './services/vectorStore'
 
 if (!API_KEY) {
   console.warn(
@@ -33,6 +35,19 @@ if (process.env.NODE_ENV === 'production') {
 // 全局错误处理（必须在路由之后注册）
 setupErrorHandler(app)
 
-app.listen(PORT, () => {
-  console.log(`[server] Chat proxy listening on http://localhost:${PORT}`)
+/** 启动数据迁移（幂等）：存量 KB 认领 + 向量表补 userId，失败不阻塞启动 */
+async function runMigrations(): Promise<void> {
+  try {
+    await claimLegacyKBs()
+    const ownerMap = await getKBOwnerMap()
+    await migrateVectorsIfLegacy(ownerMap)
+  } catch (err) {
+    console.error('[server] 数据迁移失败（跳过）：', (err as Error).message)
+  }
+}
+
+runMigrations().then(() => {
+  app.listen(PORT, () => {
+    console.log(`[server] Chat proxy listening on http://localhost:${PORT}`)
+  })
 })
