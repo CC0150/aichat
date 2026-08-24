@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { ChatMessage, ChatHistoryItem, UndoState } from '@/types'
+import { deleteChat, getChat, listChats, upsertChat } from '@/utils/chatHistoryApi'
 
 /**
  * 每条消息: { role: 'user' | 'assistant', content: string }
@@ -16,6 +17,12 @@ export const useChatStore = defineStore(
     const undoState = ref<UndoState | null>(null)
     const isRegenerating = ref(false)
     let _regenerateAbort: AbortController | null = null // 供外部中止 regenerate
+
+    // ===== 服务端持久化（防抖全量落库） =====
+    let _initialized = false
+    let _flushTimer: ReturnType<typeof setTimeout> | null = null
+    const _dirtyChatIds = new Set<string>()
+    const FLUSH_DEBOUNCE_MS = 1200
 
     const MAX_HISTORY = 50 // 最多保留 50 个会话
     const MAX_MESSAGES_PER_CHAT = 200 // 每个会话最多 200 条消息
@@ -127,6 +134,7 @@ export const useChatStore = defineStore(
         list.title = buildTitleFromContent(getContentText(content)) || '新对话'
         list.updatedAt = new Date().toISOString()
       }
+      markDirty(chatId)
     }
 
     /** 将内容追加到当前会话最后一条助手消息末尾（流式补全） */
@@ -137,6 +145,7 @@ export const useChatStore = defineStore(
       if (last.role === 'assistant') {
         ;(last as any).content += content
       }
+      markDirty(chatId)
     }
 
     /** 覆盖当前会话最后一条助手消息内容 */
@@ -147,6 +156,7 @@ export const useChatStore = defineStore(
       if (last.role === 'assistant') {
         last.content = content
       }
+      markDirty(chatId)
     }
 
     /** 重命名指定会话 */
@@ -156,6 +166,7 @@ export const useChatStore = defineStore(
         item.title = newTitle.trim()
         item.updatedAt = new Date().toISOString()
       }
+      markDirty(id)
     }
 
     /** 删除一轮对话：用户消息 + 紧随其后的 AI 回复 */
@@ -167,6 +178,7 @@ export const useChatStore = defineStore(
       const count = next?.role === 'assistant' ? 2 : 1
       const removed = list.splice(userMessageIndex, count)
       _saveUndo(chatId, removed, userMessageIndex)
+      markDirty(chatId)
     }
 
     /** 删除一轮对话：用户消息 + 当前 AI 回复（由 AI 消息触发） */
@@ -177,6 +189,7 @@ export const useChatStore = defineStore(
       if (list[assistantMessageIndex - 1].role !== 'user') return
       const removed = list.splice(assistantMessageIndex - 1, 2)
       _saveUndo(chatId, removed, assistantMessageIndex - 1)
+      markDirty(chatId)
     }
 
     function _saveUndo(chatId: string, removedItems: ChatMessage[], insertIndex: number): void {
@@ -192,6 +205,7 @@ export const useChatStore = defineStore(
       const { chatId, items, insertIndex } = undoState.value
       const list = messagesByChatId.value[chatId]
       if (list) list.splice(insertIndex, 0, ...items)
+      markDirty(chatId)
       undoState.value = null
     }
 
@@ -209,6 +223,7 @@ export const useChatStore = defineStore(
         ? generateReply(userContent)
         : `（重新生成）收到：「${userContent.slice(0, 50)}${userContent.length > 50 ? '…' : ''}」\n\n这是一条重新生成的模拟回复。`
       list[assistantMessageIndex].content = newContent
+      markDirty(chatId)
     }
 
     /** 更新指定会话中某条消息的内容 */
@@ -224,12 +239,15 @@ export const useChatStore = defineStore(
           chat.updatedAt = new Date().toISOString()
         }
       }
+      markDirty(chatId)
     }
 
     /** 从历史中移除指定会话 */
     function removeFromHistory(id: string): void {
       history.value = history.value.filter((c) => c.id !== id)
       delete messagesByChatId.value[id]
+      _dirtyChatIds.delete(id)
+      deleteChat(id).catch(() => {})
       if (currentChatId.value === id) currentChatId.value = null
     }
 
@@ -238,6 +256,116 @@ export const useChatStore = defineStore(
       history.value = []
       messagesByChatId.value = {}
       currentChatId.value = null
+    }
+
+    // ===== 服务端持久化 =====
+
+    let _boundUnload = false
+
+    /** 全量保存单个会话到服务端 */
+    async function flushChat(chatId: string | null | undefined): Promise<void> {
+      if (!chatId) return
+      const list = history.value.find((c) => c.id === chatId)
+      if (!list) return
+      const messages = messagesByChatId.value[chatId] ?? []
+      try {
+        await upsertChat(chatId, {
+          title: list.title,
+          updatedAt: Date.parse(list.updatedAt) || Date.now(),
+          messages,
+        })
+      } catch {
+        /* 网络失败不阻塞本地，后续 markDirty 会再次触发 */
+      }
+    }
+
+    /** 标记某会话待保存，1.2s 防抖批量落库（流式期间由整体替换自愈） */
+    function markDirty(chatId: string | null | undefined): void {
+      if (!chatId) return
+      _dirtyChatIds.add(chatId)
+      if (_flushTimer) return
+      _flushTimer = setTimeout(async () => {
+        _flushTimer = null
+        const ids = [..._dirtyChatIds]
+        _dirtyChatIds.clear()
+        for (const id of ids) await flushChat(id)
+      }, FLUSH_DEBOUNCE_MS)
+    }
+
+    /** 立即保存所有待保存会话（换页/关页前调用） */
+    function flushPending(): void {
+      if (_flushTimer) {
+        clearTimeout(_flushTimer)
+        _flushTimer = null
+      }
+      const ids = [..._dirtyChatIds]
+      _dirtyChatIds.clear()
+      ids.forEach((id) => flushChat(id))
+    }
+
+    /** 一次性迁移旧 localStorage 数据到服务端（防升级丢数据） */
+    async function migrateLocalOnce(): Promise<void> {
+      try {
+        const raw = localStorage.getItem('chat')
+        if (!raw) return
+        const old = JSON.parse(raw)
+        const oldHistory: ChatHistoryItem[] = Array.isArray(old?.history) ? old.history : []
+        const oldMessages: Record<string, ChatMessage[]> = old?.messagesByChatId || {}
+        for (const c of oldHistory) {
+          const messages = Array.isArray(oldMessages[c.id]) ? oldMessages[c.id] : []
+          await upsertChat(c.id, {
+            title: c.title,
+            updatedAt: Date.parse(c.updatedAt) || Date.now(),
+            messages,
+          })
+        }
+        localStorage.removeItem('chat')
+      } catch {
+        /* 迁移失败不影响启动 */
+      }
+    }
+
+    /** 初始化：拉取服务端会话列表 + 一次性迁移；重复调用忽略 */
+    async function init(): Promise<void> {
+      if (_initialized) return
+      _initialized = true
+      try {
+        const chats = await listChats()
+        if (chats.length > 0) {
+          history.value = chats.map((c) => ({
+            id: c.id,
+            title: c.title || '新对话',
+            updatedAt: c.updatedAt,
+          }))
+        }
+      } catch {
+        /* 拉取失败保持内存态 */
+      }
+      if (!_boundUnload) {
+        _boundUnload = true
+        if (typeof window !== 'undefined') window.addEventListener('pagehide', flushPending)
+      }
+      if (history.value.length === 0) await migrateLocalOnce()
+    }
+
+    /** 打开会话：切换当前会话，未加载时从服务端拉取消息 */
+    async function openChat(id: string | null): Promise<void> {
+      currentChatId.value = id
+      if (!id) return
+      if (messagesByChatId.value[id] !== undefined) return // 已加载
+      try {
+        const data = await getChat(id)
+        messagesByChatId.value[id] = (data.messages ?? []) as ChatMessage[]
+        if (!history.value.find((c) => c.id === id)) {
+          history.value.unshift({
+            id,
+            title: data.chat.title || '新对话',
+            updatedAt: data.chat.updatedAt,
+          })
+        }
+      } catch {
+        /* 服务端无此会话（404/网络错误），保持当前状态 */
+      }
     }
 
     function setRegenerateAbort(controller: AbortController): void {
@@ -264,6 +392,10 @@ export const useChatStore = defineStore(
       currentChat,
       currentMessages,
       setCurrentChat,
+      init,
+      openChat,
+      markDirty,
+      flushPending,
       addToHistory,
       addMessage,
       appendToLastMessage,
@@ -282,7 +414,5 @@ export const useChatStore = defineStore(
       abortRegenerate,
     }
   },
-  {
-    persist: true,
-  },
+  {},
 )

@@ -1,12 +1,24 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useAppStore } from '@/stores/app'
+import { useChatStore } from '@/stores/chat'
+import { useInterviewStore } from '@/stores/interview'
 import AppSidebar from './AppSidebar.vue'
 
 /** 全局应用状态（主题、侧边栏、当前模型等） */
 const appStore = useAppStore()
+/** 会话历史（服务端持久化） */
+const chatStore = useChatStore()
+/** 面试历史（服务端持久化） */
+const interviewStore = useInterviewStore()
+
+onMounted(() => {
+  // 登录后拉取服务端会话/面试记录，填充侧边栏与统计页
+  chatStore.init()
+  interviewStore.init()
+})
 
 /**
  * 根据侧边栏折叠状态动态计算侧边栏宽度 CSS class

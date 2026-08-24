@@ -5,6 +5,7 @@ import { handleAIError } from '../services/errorHandler'
 import { runInterviewEvaluate, runInterviewEvaluateStream } from '../services/agent'
 import { sanitizeString } from '../utils/validate'
 import { writeSSEHeaders } from '../middleware'
+import { deleteRecord, listRecords, upsertRecord } from '../db'
 import type { AgentEvaluateResult } from '../types'
 
 const router = Router()
@@ -278,6 +279,46 @@ router.post('/agent-evaluate-stream', async (req: Request, res: Response) => {
       // 连接已断开，忽略写入错误
     }
   }
+})
+
+// ===== 面试记录持久化（按 req.userId 隔离） =====
+
+/** GET /api/interview/records — 当前用户的面试记录列表 */
+router.get('/records', (req: Request, res: Response) => {
+  const userId = req.userId as number
+  const records = listRecords(userId).map((r) => r.data)
+  res.json({ records })
+})
+
+/** POST /api/interview/records — 保存一条面试记录 */
+router.post('/records', (req: Request, res: Response) => {
+  const userId = req.userId as number
+  const data: any = req.body?.record
+  if (!data || typeof data !== 'object') {
+    res.status(400).json({ error: '缺少面试记录' })
+    return
+  }
+  const rawId = sanitizeString(data.id, { maxLength: 100, required: false }) || String(Date.now())
+  const finishedAt =
+    typeof data.finishedAt === 'string' ? new Date(data.finishedAt).getTime() : Date.now()
+  upsertRecord(userId, {
+    id: rawId,
+    data,
+    updatedAt: Number.isNaN(finishedAt) ? Date.now() : finishedAt,
+  })
+  res.status(201).json({ success: true })
+})
+
+/** DELETE /api/interview/records/:id — 删除一条面试记录 */
+router.delete('/records/:id', (req: Request, res: Response) => {
+  const userId = req.userId as number
+  const id = sanitizeString(req.params.id, { maxLength: 100 })
+  if (!id) {
+    res.status(400).json({ error: '记录 id 无效' })
+    return
+  }
+  deleteRecord(userId, id)
+  res.json({ success: true })
 })
 
 export default router

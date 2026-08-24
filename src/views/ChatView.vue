@@ -24,7 +24,7 @@ const showRenameModal = ref(false)
 watch(
   () => route.params.id,
   (id) => {
-    chatStore.setCurrentChat(id ?? null)
+    chatStore.openChat(id ?? null)
   },
   { immediate: true },
 )

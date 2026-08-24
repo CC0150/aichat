@@ -182,3 +182,19 @@ export function requestGenerateQuestionsByRole(body: {
 }): Promise<any> {
   return apiRequest('/api/questions/generate-by-role', { method: 'POST', body })
 }
+
+/** 获取当前用户的面试记录列表 */
+export async function listInterviewRecords(): Promise<any[]> {
+  const data = await apiRequest('/api/interview/records')
+  return data.records ?? []
+}
+
+/** 保存一条面试记录 */
+export async function saveInterviewRecord(record: any): Promise<void> {
+  await apiRequest('/api/interview/records', { method: 'POST', body: { record } })
+}
+
+/** 删除一条面试记录 */
+export async function deleteInterviewRecord(id: string): Promise<void> {
+  await apiRequest(`/api/interview/records/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}

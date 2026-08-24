@@ -2,8 +2,71 @@ import { Router, type Request, type Response } from 'express'
 import { writeSSEHeaders } from '../middleware'
 import { streamChat } from '../services/deepseek'
 import { DEFAULT_MODEL, sanitizeModel } from '../config'
+import { sanitizeString } from '../utils/validate'
+import { deleteChat, getChat, getMessages, listChats, upsertChat, upsertMessages } from '../db'
 
 const router = Router()
+
+// ===== 会话历史 CRUD（按 req.userId 隔离，/api 已挂 requireAuth） =====
+
+/** GET /api/chat — 当前用户的会话列表（仅元信息） */
+router.get('/', (req: Request, res: Response) => {
+  const userId = req.userId as number
+  const chats = listChats(userId).map((c) => ({
+    id: c.id,
+    title: c.title,
+    updatedAt: new Date(c.updated_at).toISOString(),
+  }))
+  res.json({ chats })
+})
+
+/** GET /api/chat/:id — 单个会话及其消息 */
+router.get('/:id', (req: Request, res: Response) => {
+  const userId = req.userId as number
+  const id = sanitizeString(req.params.id, { maxLength: 100 })
+  if (!id) {
+    res.status(400).json({ error: '会话 id 无效' })
+    return
+  }
+  const chat = getChat(userId, id)
+  if (!chat) {
+    res.status(404).json({ error: '会话不存在' })
+    return
+  }
+  res.json({
+    chat: { id: chat.id, title: chat.title, updatedAt: new Date(chat.updated_at).toISOString() },
+    messages: getMessages(userId, id) ?? [],
+  })
+})
+
+/** PUT /api/chat/:id — 幂等创建/更新会话（标题 + 可选全量消息） */
+router.put('/:id', (req: Request, res: Response) => {
+  const userId = req.userId as number
+  const id = sanitizeString(req.params.id, { maxLength: 100 })
+  if (!id) {
+    res.status(400).json({ error: '会话 id 无效' })
+    return
+  }
+  const title = sanitizeString(req.body?.title, { maxLength: 100, required: false }) ?? ''
+  const messages = Array.isArray(req.body?.messages) ? req.body.messages : null
+  const updatedAt = typeof req.body?.updatedAt === 'number' ? req.body.updatedAt : Date.now()
+
+  upsertChat(userId, { id, title, updatedAt })
+  if (messages) upsertMessages(userId, id, messages, updatedAt)
+  res.json({ success: true })
+})
+
+/** DELETE /api/chat/:id — 删除会话及其消息 */
+router.delete('/:id', (req: Request, res: Response) => {
+  const userId = req.userId as number
+  const id = sanitizeString(req.params.id, { maxLength: 100 })
+  if (!id) {
+    res.status(400).json({ error: '会话 id 无效' })
+    return
+  }
+  deleteChat(userId, id)
+  res.json({ success: true })
+})
 
 /**
  * POST /api/chat

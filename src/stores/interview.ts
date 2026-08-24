@@ -2,6 +2,11 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { selectQuestions, interviewTypes } from '@/data/questions/index'
 import type { InterviewQuestion, InterviewScore, AnswerStatus, Difficulty } from '@/types'
+import {
+  deleteInterviewRecord,
+  listInterviewRecords,
+  saveInterviewRecord,
+} from '@/utils/interviewApi'
 
 interface ConversationMessage {
   role: 'user' | 'assistant'
@@ -41,6 +46,7 @@ export const useInterviewStore = defineStore(
 
     // ===== 历史记录 =====
     const history = ref<HistoryRecord[]>([])
+    let _initialized = false
 
     // ===== 计算属性 =====
     const currentQuestion = computed(() => questions.value[currentIndex.value] || null)
@@ -286,7 +292,7 @@ export const useInterviewStore = defineStore(
       const finishedAt = new Date().toISOString()
       const typeLabel =
         (interviewTypes as Record<string, any>)[interviewType.value || '']?.label || ''
-      history.value.unshift({
+      const record: HistoryRecord = {
         id: Date.now().toString(),
         type: interviewType.value,
         typeLabel,
@@ -299,6 +305,10 @@ export const useInterviewStore = defineStore(
         startedAt: startedAt.value,
         finishedAt,
         totalScore: totalScore.value,
+      }
+      history.value.unshift(record)
+      saveInterviewRecord(record).catch(() => {
+        /* 保存失败不打断当前流程 */
       })
     }
 
@@ -324,12 +334,43 @@ export const useInterviewStore = defineStore(
     /** 删除单条历史记录 */
     function deleteHistoryRecord(id: string): void {
       history.value = history.value.filter((h) => h.id !== id)
+      deleteInterviewRecord(id).catch(() => {})
     }
 
     /** 批量删除历史记录 */
     function deleteHistoryRecords(ids: string[]): void {
       const idSet = new Set(ids)
       history.value = history.value.filter((h) => !idSet.has(h.id))
+      ids.forEach((id) => deleteInterviewRecord(id).catch(() => {}))
+    }
+
+    /** 初始化：拉取服务端记录 + 一次性迁移旧 localStorage；重复调用忽略 */
+    async function init(): Promise<void> {
+      if (_initialized) return
+      _initialized = true
+      try {
+        const records = await listInterviewRecords()
+        if (records.length > 0) {
+          history.value = records
+          return
+        }
+      } catch {
+        /* 拉取失败保持内存态 */
+      }
+      // 一次性迁移本地数据
+      try {
+        const raw = localStorage.getItem('interview')
+        if (!raw) return
+        const old = JSON.parse(raw)
+        const oldHistory: HistoryRecord[] = Array.isArray(old?.history) ? old.history : []
+        for (const r of oldHistory) {
+          history.value.unshift(r)
+          saveInterviewRecord(r).catch(() => {})
+        }
+        localStorage.removeItem('interview')
+      } catch {
+        /* 迁移失败不影响启动 */
+      }
     }
 
     return {
@@ -367,7 +408,8 @@ export const useInterviewStore = defineStore(
       clearHistory,
       deleteHistoryRecord,
       deleteHistoryRecords,
+      init,
     }
   },
-  { persist: true },
+  {},
 )
