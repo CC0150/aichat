@@ -49,12 +49,14 @@ export async function agentLoop({
   maxSteps = 10,
   logTag = 'agent',
   signal,
+  client,
 }: AgentLoopOptions): Promise<AgentLoopResult> {
   const steps: Array<{ toolName: string; args: Record<string, unknown> }> = []
+  const openaiClient = client ?? openai
   const currentMessages: ChatMessage[] = [{ role: 'system', content: system }, ...messages]
 
   for (let i = 0; i < maxSteps; i++) {
-    const response = await openai.chat.completions.create(
+    const response = await openaiClient.chat.completions.create(
       {
         model,
         messages: currentMessages as any[],
@@ -105,7 +107,7 @@ export async function agentLoop({
   }
 
   // 达到 maxSteps → 最后强制输出文本
-  const finalResp = await openai.chat.completions.create(
+  const finalResp = await openaiClient.chat.completions.create(
     {
       model,
       messages: [
@@ -159,8 +161,10 @@ export async function* agentLoopStream({
   maxSteps = 10,
   logTag = 'agent',
   signal,
+  client,
 }: AgentLoopOptions): AsyncGenerator<AgentStreamEvent> {
   const steps: Array<{ toolName: string; args: Record<string, unknown> }> = []
+  const openaiClient = client ?? openai
   const currentMessages: ChatMessage[] = [{ role: 'system', content: system }, ...messages]
 
   for (let i = 0; i < maxSteps; i++) {
@@ -169,7 +173,7 @@ export async function* agentLoopStream({
 
     let response: any
     try {
-      response = await openai.chat.completions.create(
+      response = await openaiClient.chat.completions.create(
         {
           model,
           messages: currentMessages as any[],
@@ -244,7 +248,7 @@ export async function* agentLoopStream({
 
   // 达到 maxSteps → 最后强制输出文本
   try {
-    const finalResp = await openai.chat.completions.create(
+    const finalResp = await openaiClient.chat.completions.create(
       {
         model,
         messages: [

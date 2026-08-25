@@ -3,7 +3,6 @@
 import { ref, computed, shallowRef, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
-import { useAppStore } from '@/stores/app'
 import { isAbortError } from '@/utils'
 import { requestChatStream } from '@/utils'
 import { requestRagStream } from '@/utils/ragApi'
@@ -18,7 +17,6 @@ const props = defineProps({
 const emit = defineEmits(['closeRenameModal', 'sendMessage', 'continueGenerate'])
 
 const chatStore = useChatStore()
-const appStore = useAppStore()
 
 /** 虚拟滚动组件 DynamicScroller 的引用 */
 const scrollerRef = ref<any>(null)
@@ -274,7 +272,6 @@ async function regenerate(index) {
   chatStore.isRegenerating = true
   try {
     isGenerating.value = true
-    const modelConfig = appStore.currentModel
     // 清空当前 assistant 消息，准备接收新内容
     chatStore.setLastAssistantMessage('')
 
@@ -289,13 +286,12 @@ async function regenerate(index) {
       await requestRagStream({
         query: text,
         kbId,
-        model: modelConfig.model,
         onChunk: (chunk: string) => chatStore.appendToLastMessage(chunk),
         onError: (msg: string) => chatStore.setLastAssistantMessage(`Error: ${msg}`),
         signal: controller.signal,
       })
     } else {
-      await requestChatStream(modelConfig.model, [{ role: 'user', content: text }], {
+      await requestChatStream([{ role: 'user', content: text }], {
         onChunk: (content: string) => chatStore.appendToLastMessage(content),
         onError: (msg: string) => chatStore.setLastAssistantMessage(`Error: ${msg}`),
         signal: controller.signal,

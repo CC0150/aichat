@@ -12,8 +12,10 @@ export async function callAI({
   maxTokens = 2000,
   logTag = 'ai',
   signal,
+  client,
 }: CallAIParams): Promise<any> {
-  const response = await openai.chat.completions.create(
+  const openaiClient = client ?? openai
+  const response = await openaiClient.chat.completions.create(
     {
       model,
       messages: [{ role: 'user', content: prompt }],

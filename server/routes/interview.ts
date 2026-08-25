@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express'
 import { DEFAULT_MODEL, sanitizeModel } from '../config'
+import { byokFromBody } from '../utils/byok'
 import { callAI } from '../services/aiCompletions'
 import { handleAIError } from '../services/errorHandler'
 import { runInterviewEvaluate, runInterviewEvaluateStream } from '../services/agent'
@@ -82,8 +83,8 @@ router.post('/score', async (req: Request, res: Response) => {
   const question = sanitizeString(req.body?.question, { maxLength: 2000 })
   const userAnswer = sanitizeString(req.body?.userAnswer, { maxLength: 5000 })
   const answerPoints = req.body?.answerPoints
-  const rawModel = sanitizeString(req.body?.model, { required: false })
-  const model = sanitizeModel(rawModel || DEFAULT_MODEL)
+  const { client, model: rawModel } = byokFromBody(req.body)
+  const model = client ? rawModel : sanitizeModel(rawModel || DEFAULT_MODEL)
 
   if (!question || !userAnswer) {
     return res.status(400).json({ error: 'question 和 userAnswer 为必填字段' })
@@ -102,6 +103,7 @@ router.post('/score', async (req: Request, res: Response) => {
       temperature: 0.3,
       maxTokens: 600,
       logTag: 'interview/score',
+      client,
     })
     res.json(buildScoreResult(result))
   } catch (err) {
@@ -115,9 +117,10 @@ router.post('/score', async (req: Request, res: Response) => {
  * body: { question, answerPoints, conversationHistory, model? }
  */
 router.post('/evaluate', async (req: Request, res: Response) => {
-  const { question, answerPoints, conversationHistory = [], model = DEFAULT_MODEL } = req.body || {}
+  const { question, answerPoints, conversationHistory = [] } = req.body || {}
   const safeQuestion = sanitizeString(question, { maxLength: 2000 })
-  const safeModel = sanitizeModel(sanitizeString(model, { required: false }) || DEFAULT_MODEL)
+  const { client, model: rawModel } = byokFromBody(req.body)
+  const safeModel = client ? rawModel : sanitizeModel(rawModel || DEFAULT_MODEL)
 
   if (!safeQuestion || !conversationHistory.length) {
     return res.status(400).json({ error: 'question 和 conversationHistory 为必填字段' })
@@ -153,6 +156,7 @@ router.post('/evaluate', async (req: Request, res: Response) => {
       temperature: 0.3,
       maxTokens: 600,
       logTag: 'interview/evaluate',
+      client,
     })
 
     if (result.action === 'follow_up') {
@@ -180,8 +184,8 @@ router.post('/agent-evaluate', async (req: Request, res: Response) => {
   const answerPoints = req.body?.answerPoints
   const conversationHistory = req.body?.conversationHistory || []
   const kbId = sanitizeString(req.body?.kbId, { maxLength: 50, required: false }) || undefined
-  const rawModel = sanitizeString(req.body?.model, { required: false })
-  const model = sanitizeModel(rawModel || DEFAULT_MODEL)
+  const { client, model: rawModel } = byokFromBody(req.body)
+  const model = client ? rawModel : sanitizeModel(rawModel || DEFAULT_MODEL)
 
   if (!question || !conversationHistory.length) {
     return res.status(400).json({ error: 'question 和 conversationHistory 为必填字段' })
@@ -195,6 +199,7 @@ router.post('/agent-evaluate', async (req: Request, res: Response) => {
       kbId,
       userId: req.userId as number,
       model,
+      client,
     })
     res.json(result)
   } catch (err: any) {
@@ -222,8 +227,8 @@ router.post('/agent-evaluate-stream', async (req: Request, res: Response) => {
   const answerPoints = req.body?.answerPoints
   const conversationHistory = req.body?.conversationHistory || []
   const kbId = sanitizeString(req.body?.kbId, { maxLength: 50, required: false }) || undefined
-  const rawModel = sanitizeString(req.body?.model, { required: false })
-  const model = sanitizeModel(rawModel || DEFAULT_MODEL)
+  const { client, model: rawModel } = byokFromBody(req.body)
+  const model = client ? rawModel : sanitizeModel(rawModel || DEFAULT_MODEL)
 
   if (!question || !conversationHistory.length) {
     return res.status(400).json({ error: 'question 和 conversationHistory 为必填字段' })
@@ -252,6 +257,7 @@ router.post('/agent-evaluate-stream', async (req: Request, res: Response) => {
       userId: req.userId as number,
       model,
       signal: controller.signal,
+      client,
     })) {
       if (controller.signal.aborted) break
       res.write(`data: ${JSON.stringify(event)}\n\n`)

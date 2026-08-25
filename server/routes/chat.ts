@@ -3,6 +3,7 @@ import { writeSSEHeaders } from '../middleware'
 import { streamChat } from '../services/deepseek'
 import { DEFAULT_MODEL, sanitizeModel } from '../config'
 import { sanitizeString } from '../utils/validate'
+import { byokFromBody } from '../utils/byok'
 import { deleteChat, getChat, getMessages, listChats, upsertChat, upsertMessages } from '../db'
 
 const router = Router()
@@ -76,8 +77,10 @@ router.delete('/:id', (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   writeSSEHeaders(res)
 
-  const { model: rawModel = DEFAULT_MODEL, messages = [] } = req.body || {}
-  const model = sanitizeModel(rawModel)
+  // 解析自定义供应商（BYOK）；未提供 baseUrl/apiKey 时 client 为空，走平台默认
+  const { client, model: rawModel } = byokFromBody(req.body)
+  const messages = Array.isArray(req.body?.messages) ? req.body.messages : []
+  const model = client ? rawModel : sanitizeModel(rawModel || DEFAULT_MODEL)
 
   if (!messages.length) {
     res.write(`data: ${JSON.stringify({ error: 'messages 不能为空' })}\n\n`)
@@ -92,7 +95,7 @@ router.post('/', async (req: Request, res: Response) => {
   res.on('error', () => {})
 
   try {
-    for await (const chunk of streamChat(model, messages, controller.signal)) {
+    for await (const chunk of streamChat(model, messages, controller.signal, client)) {
       if (controller.signal.aborted) break
       res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`)
     }

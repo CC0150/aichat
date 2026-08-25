@@ -43,7 +43,13 @@ export function deleteFileFromKB(kbId: string, fileId: string): Promise<any> {
 /** 基于知识库生成面试题 */
 export function generateFromKB(
   id: string,
-  body: { questionCount: number; difficulty?: string; model?: string },
+  body: {
+    questionCount?: number
+    difficulty?: string
+    model?: string
+    baseUrl?: string
+    apiKey?: string
+  },
 ): Promise<any> {
   return apiRequest(`/api/knowledge/${id}/generate`, { method: 'POST', body })
 }
@@ -51,7 +57,13 @@ export function generateFromKB(
 /** Agent 驱动知识库出题 */
 export function agentGenerateFromKB(
   id: string,
-  body: { questionCount: number; difficulty?: string; model?: string },
+  body: {
+    questionCount?: number
+    difficulty?: string
+    model?: string
+    baseUrl?: string
+    apiKey?: string
+  },
 ): Promise<any> {
   return apiRequest(`/api/knowledge/${id}/agent-generate`, { method: 'POST', body })
 }

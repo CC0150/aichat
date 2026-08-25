@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express'
 import { DEFAULT_MODEL } from '../config'
+import { byokFromBody } from '../utils/byok'
 import { callAI } from '../services/aiCompletions'
 import { handleAIError } from '../services/errorHandler'
 import { DIFFICULTY_MAP } from '../utils/constants'
@@ -45,7 +46,8 @@ router.post('/generate', async (req: Request, res: Response) => {
     ['all', 'easy', 'medium', 'hard'] as const,
     'all',
   )
-  const model = sanitizeString(req.body?.model, { required: false }) || DEFAULT_MODEL
+  const { client, model: rawModel } = byokFromBody(req.body)
+  const model = rawModel || DEFAULT_MODEL
 
   if (!content) {
     return res.status(400).json({ error: 'content 为必填字段' })
@@ -73,6 +75,7 @@ router.post('/generate', async (req: Request, res: Response) => {
       temperature: 0.5,
       maxTokens: 4000,
       logTag: 'questions/generate',
+      client,
     })
 
     if (!Array.isArray(questions) || questions.length === 0) {
@@ -141,7 +144,8 @@ router.post('/generate-by-role', async (req: Request, res: Response) => {
     ['all', 'easy', 'medium', 'hard'] as const,
     'all',
   )
-  const model = sanitizeString(req.body?.model, { required: false }) || DEFAULT_MODEL
+  const { client, model: rawModel } = byokFromBody(req.body)
+  const model = rawModel || DEFAULT_MODEL
 
   if (!role) {
     return res.status(400).json({ error: 'role 为必填字段' })
@@ -160,6 +164,7 @@ router.post('/generate-by-role', async (req: Request, res: Response) => {
       temperature: 0.7,
       maxTokens: 4000,
       logTag: 'questions/generate-by-role',
+      client,
     })
 
     if (!Array.isArray(questions) || questions.length === 0) {

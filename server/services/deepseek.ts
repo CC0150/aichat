@@ -1,3 +1,4 @@
+import type OpenAI from 'openai'
 import { openai } from '../config'
 
 /**
@@ -7,8 +8,10 @@ export async function* streamChat(
   model: string,
   messages: Array<{ role: string; content: unknown }>,
   signal?: AbortSignal,
+  client?: OpenAI,
 ): AsyncGenerator<string> {
-  const stream = await openai.chat.completions.create(
+  const openaiClient = client ?? openai
+  const stream = await openaiClient.chat.completions.create(
     {
       model,
       messages: messages as any[],

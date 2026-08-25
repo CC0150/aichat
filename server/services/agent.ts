@@ -4,6 +4,7 @@
  * 面试评估专用 —— 定义工具 + 调用 agentLoop 执行评估
  */
 
+import type OpenAI from 'openai'
 import fs from 'fs/promises'
 import path from 'path'
 import { agentLoop, agentLoopStream } from '../utils/agentLoop'
@@ -108,6 +109,7 @@ async function executeTool(
   args: Record<string, unknown>,
   signal?: AbortSignal,
   userId?: number,
+  client?: OpenAI,
 ): Promise<string> {
   switch (name) {
     case 'searchKnowledgeBase':
@@ -129,6 +131,7 @@ async function executeTool(
         maxTokens: 800,
         logTag: 'agent/grade',
         signal,
+        client,
       })
       return typeof result === 'object' ? JSON.stringify(result) : String(result)
     }
@@ -147,6 +150,7 @@ async function executeTool(
         maxTokens: 800,
         logTag: 'agent/generate-question',
         signal,
+        client,
       })
       return typeof result === 'object' ? JSON.stringify(result) : String(result)
     }
@@ -165,6 +169,7 @@ interface InterviewEvaluateParams {
   userId?: number
   model?: string
   signal?: AbortSignal
+  client?: OpenAI
 }
 
 /**
@@ -177,6 +182,7 @@ export async function runInterviewEvaluate({
   kbId,
   userId,
   model = 'deepseek-v4-pro',
+  client,
 }: InterviewEvaluateParams): Promise<AgentEvaluateResult> {
   const pointsText = Array.isArray(answerPoints)
     ? answerPoints.map((p, i) => `${i + 1}. ${p}`).join('\n')
@@ -218,7 +224,7 @@ ${historyText}
 
   const { text, steps }: AgentLoopResult = await agentLoop({
     tools,
-    executeTool: (name, args, signal) => executeTool(name, args, signal, userId),
+    executeTool: (name, args, signal) => executeTool(name, args, signal, userId, client),
     model,
     system,
     messages: [
@@ -229,6 +235,7 @@ ${historyText}
     ],
     maxSteps: 5,
     logTag: 'interview/evaluate',
+    client,
   })
 
   // 解析 Agent 输出的 JSON
@@ -298,6 +305,7 @@ export async function* runInterviewEvaluateStream({
   userId,
   model = 'deepseek-v4-pro',
   signal,
+  client,
 }: InterviewEvaluateParams): AsyncGenerator<AgentStreamEvent> {
   const pointsText = Array.isArray(answerPoints)
     ? answerPoints.map((p, i) => `${i + 1}. ${p}`).join('\n')
@@ -340,7 +348,7 @@ ${historyText}
   // 委托给流式 Agent 循环
   for await (const event of agentLoopStream({
     tools,
-    executeTool: (name, args, signal) => executeTool(name, args, signal, userId),
+    executeTool: (name, args, signal) => executeTool(name, args, signal, userId, client),
     model,
     system,
     messages: [
@@ -352,6 +360,7 @@ ${historyText}
     maxSteps: 5,
     logTag: 'interview/evaluate-stream',
     signal,
+    client,
   })) {
     // 透传 thinking / tool_call / tool_result / error 事件
     if (event.type !== 'done') {
@@ -415,6 +424,7 @@ interface AgentGenerateQuestionsParams {
   count?: number
   difficulty?: string
   model?: string
+  client?: OpenAI
 }
 
 interface AgentGenerateQuestionsResult {
@@ -432,6 +442,7 @@ export async function agentGenerateQuestions({
   count = 5,
   difficulty = 'medium',
   model = 'deepseek-v4-pro',
+  client,
 }: AgentGenerateQuestionsParams): Promise<AgentGenerateQuestionsResult> {
   const qTools: ToolDefinition[] = [
     {
@@ -476,6 +487,7 @@ export async function agentGenerateQuestions({
     ],
     maxSteps: 5,
     logTag: 'agent/generate-questions',
+    client,
   })
 
   const jsonMatch = text.match(/\[[\s\S]*\]/)

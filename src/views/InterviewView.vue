@@ -177,12 +177,13 @@ async function startFileInterview() {
   isGenerating.value = true
   fileError.value = ''
   try {
-    const result = await requestGenerateQuestions({
-      content: uploadedFile.value.text,
-      questionCount: questionCount.value,
-      difficulty: difficulty.value,
-      model: appStore.currentModelId,
-    })
+    const result = await requestGenerateQuestions(
+      appStore.aiRequestParams({
+        content: uploadedFile.value.text,
+        questionCount: questionCount.value,
+        difficulty: difficulty.value,
+      }),
+    )
     if (!result.questions || result.questions.length === 0) {
       fileError.value = result.error || 'AI 未能生成有效题目，请换一个文档重试。'
       return
@@ -245,17 +246,21 @@ async function startKBInterview() {
   try {
     let result
     if (useAgentGenerate.value) {
-      result = await agentGenerateFromKB(selectedKBId.value, {
-        questionCount: questionCount.value,
-        difficulty: difficulty.value,
-        model: appStore.currentModelId,
-      })
+      result = await agentGenerateFromKB(
+        selectedKBId.value,
+        appStore.aiRequestParams({
+          questionCount: questionCount.value,
+          difficulty: difficulty.value,
+        }),
+      )
     } else {
-      result = await knowledgeStore.generateQuestions(selectedKBId.value, {
-        questionCount: questionCount.value,
-        difficulty: difficulty.value,
-        model: appStore.currentModelId,
-      })
+      result = await knowledgeStore.generateQuestions(
+        selectedKBId.value,
+        appStore.aiRequestParams({
+          questionCount: questionCount.value,
+          difficulty: difficulty.value,
+        }),
+      )
     }
     if (!result.questions || result.questions.length === 0) {
       kbError.value = result.error || 'AI 未能生成有效题目，请重试。'
@@ -320,12 +325,13 @@ async function startRoleInterview() {
   isRoleGenerating.value = true
   roleError.value = ''
   try {
-    const result = await requestGenerateQuestionsByRole({
-      role: selectedType.value,
-      questionCount: questionCount.value,
-      difficulty: difficulty.value,
-      model: appStore.currentModelId,
-    })
+    const result = await requestGenerateQuestionsByRole(
+      appStore.aiRequestParams({
+        role: selectedType.value,
+        questionCount: questionCount.value,
+        difficulty: difficulty.value,
+      }),
+    )
     if (!result.questions || result.questions.length === 0) {
       roleError.value = result.error || 'AI 未能生成有效题目，请重试。'
       return

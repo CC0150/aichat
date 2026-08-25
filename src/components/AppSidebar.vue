@@ -375,6 +375,17 @@ async function handleLogout() {
         >
           {{ authStore.user.username }}
         </span>
+        <!-- 暗黑模式切换 -->
+        <button
+          v-tooltip="appStore.isDark ? '切换为日间模式' : '切换为夜间模式'"
+          type="button"
+          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary"
+          :aria-label="appStore.isDark ? '切换为日间模式' : '切换为夜间模式'"
+          @click="appStore.toggleTheme()"
+        >
+          <Icon v-if="appStore.isDark" icon="lucide:sun" class="h-4 w-4" />
+          <Icon v-else icon="lucide:moon" class="h-4 w-4" />
+        </button>
         <button
           v-if="!appStore.sidebarCollapsed"
           v-tooltip="'退出登录'"
@@ -386,36 +397,34 @@ async function handleLogout() {
           <Icon icon="lucide:log-out" class="h-4 w-4" />
         </button>
       </div>
-      <button
+      <div
         v-else
-        type="button"
-        class="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary"
-        @click="router.push({ name: 'Login' })"
+        class="flex items-center gap-1 rounded-xl px-1 py-1 transition-colors hover:bg-surface-input"
+        :class="{ 'justify-center': appStore.sidebarCollapsed }"
       >
-        <span
-          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-input text-text-secondary"
+        <button
+          type="button"
+          class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-left text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary"
+          @click="router.push({ name: 'Login' })"
         >
-          <Icon icon="lucide:user" class="h-[18px] w-[18px]" />
-        </span>
-        <span v-if="!appStore.sidebarCollapsed" class="truncate text-sm font-medium">登录</span>
-      </button>
-      <button
-        v-tooltip="appStore.isDark ? '切换为日间模式' : '切换为夜间模式'"
-        type="button"
-        class="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary"
-        :aria-label="appStore.isDark ? '切换为日间模式' : '切换为夜间模式'"
-        @click="appStore.toggleTheme()"
-      >
-        <span
-          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-input text-text-secondary"
+          <span
+            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-input text-text-secondary"
+          >
+            <Icon icon="lucide:user" class="h-[18px] w-[18px]" />
+          </span>
+          <span v-if="!appStore.sidebarCollapsed" class="truncate text-sm font-medium">登录</span>
+        </button>
+        <button
+          v-tooltip="appStore.isDark ? '切换为日间模式' : '切换为夜间模式'"
+          type="button"
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors duration-150 hover:bg-surface-input hover:text-text-primary"
+          :aria-label="appStore.isDark ? '切换为日间模式' : '切换为夜间模式'"
+          @click="appStore.toggleTheme()"
         >
-          <Icon v-if="appStore.isDark" icon="lucide:sun" class="h-[18px] w-[18px]" />
-          <Icon v-else icon="lucide:moon" class="h-[18px] w-[18px]" />
-        </span>
-        <span v-if="!appStore.sidebarCollapsed" class="truncate text-sm font-medium">{{
-          appStore.isDark ? '日间模式' : '夜间模式'
-        }}</span>
-      </button>
+          <Icon v-if="appStore.isDark" icon="lucide:sun" class="h-4 w-4" />
+          <Icon v-else icon="lucide:moon" class="h-4 w-4" />
+        </button>
+      </div>
     </div>
 
     <!-- Rename modal -->

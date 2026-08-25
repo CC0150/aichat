@@ -256,24 +256,24 @@ async function evaluateCurrentQuestion(signal?: AbortSignal) {
     }
 
     await requestAgentEvaluateStream(
-      {
+      appStore.aiRequestParams({
         question: q.question,
         answerPoints: q.answerPoints,
         conversationHistory,
         kbId: interviewStore.kbId,
-        model: appStore.currentModelId,
-      },
+      }),
       callbacks,
       signal,
     )
   } else {
     // ===== 传统 REST 评估 =====
-    const result = await requestEvaluate({
-      question: q.question,
-      answerPoints: q.answerPoints,
-      conversationHistory,
-      model: appStore.currentModelId,
-    })
+    const result = await requestEvaluate(
+      appStore.aiRequestParams({
+        question: q.question,
+        answerPoints: q.answerPoints,
+        conversationHistory,
+      }),
+    )
 
     const action = interviewStore.handleEvaluateResult(q.id, result)
     agentSteps.value = result.agentSteps?.length
@@ -340,12 +340,13 @@ async function handleSubmit() {
     scoreError.value = ''
 
     try {
-      const result = await requestScore({
-        question: q.question,
-        answerPoints: q.answerPoints,
-        userAnswer: answer,
-        model: appStore.currentModelId,
-      })
+      const result = await requestScore(
+        appStore.aiRequestParams({
+          question: q.question,
+          answerPoints: q.answerPoints,
+          userAnswer: answer,
+        }),
+      )
       interviewStore.saveScore(q.id, result)
     } catch (err) {
       scoreError.value = err.message || '评分失败'

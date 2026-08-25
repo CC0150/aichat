@@ -34,6 +34,18 @@ function getOpenAI(): OpenAI {
 }
 
 /**
+ * 创建独立的 OpenAI 客户端 —— 供"用户自带 Key"（BYOK）按请求使用自定义供应商。
+ * 仅用于单次请求，对象即用即弃，不缓存、不持久化。
+ */
+export function createOpenAI(opts?: { baseURL?: string; apiKey?: string }): OpenAI {
+  return new OpenAI({
+    apiKey: opts?.apiKey || API_KEY,
+    baseURL: opts?.baseURL || BASE_URL,
+    timeout: 60000,
+  })
+}
+
+/**
  * 延迟代理：所有 openai.xxx 调用自动转发到懒加载的 OpenAI 实例
  * 兼容原来的 import { openai } from '../config' 用法
  */

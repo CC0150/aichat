@@ -10,6 +10,7 @@ import { Router, type Request, type Response } from 'express'
 import { writeSSEHeaders } from '../middleware'
 import { ragQuery } from '../services/rag'
 import { sanitizeString } from '../utils/validate'
+import { byokFromBody } from '../utils/byok'
 import { getOwnedMeta } from './knowledge'
 
 const router = Router()
@@ -18,7 +19,8 @@ router.post('/search', async (req: Request, res: Response) => {
   const userId = req.userId as number
   const query = sanitizeString(req.body?.query, { maxLength: 2000 })
   const kbId = sanitizeString(req.body?.kbId, { maxLength: 50, required: false }) || undefined
-  const model = sanitizeString(req.body?.model, { maxLength: 50, required: false }) || undefined
+  const { client, model: rawModel } = byokFromBody(req.body)
+  const model = rawModel || undefined
   const topK = Math.min(Math.max(parseInt(req.body?.topK, 10) || 5, 1), 20)
 
   if (!query) {
@@ -40,7 +42,11 @@ router.post('/search', async (req: Request, res: Response) => {
   res.on('error', () => {})
 
   try {
-    for await (const chunk of ragQuery(query, { userId, kbId, model, topK }, controller.signal)) {
+    for await (const chunk of ragQuery(
+      query,
+      { userId, kbId, model, topK, client },
+      controller.signal,
+    )) {
       if (controller.signal.aborted) break
       res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`)
     }

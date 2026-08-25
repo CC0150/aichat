@@ -1,3 +1,5 @@
+import type OpenAI from 'openai'
+
 // ===== 共享类型定义 =====
 
 /** AI 对话消息 */
@@ -49,6 +51,8 @@ export interface AgentLoopOptions {
   logTag?: string
   /** 客户端断开时中止上游 LLM 调用 */
   signal?: AbortSignal
+  /** 自定义供应商客户端（BYOK），缺省回落到平台 openai */
+  client?: OpenAI
 }
 
 /** agentLoop 返回 */
@@ -146,6 +150,8 @@ export interface CallAIParams {
   maxTokens?: number
   logTag?: string
   signal?: AbortSignal
+  /** 自定义供应商客户端（BYOK），缺省回落到平台 openai */
+  client?: OpenAI
 }
 
 /** sanitizeString 参数 */
@@ -183,6 +189,8 @@ export interface RagQueryOptions {
   model?: string
   topK?: number
   rerank?: boolean
+  /** 自定义供应商客户端（BYOK），缺省回落到平台 openai */
+  client?: OpenAI
 }
 
 /** errorHandler 参数 */

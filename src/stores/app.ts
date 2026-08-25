@@ -77,6 +77,104 @@ export const useAppStore = defineStore(
       currentModelId.value = id
     }
 
+    // ===== 自定义 AI 供应商（BYOK）=====
+    /** 一个供应商一条记录：自定义名称 + baseUrl + apiKey + 单个 model（可多供应商） */
+    interface CustomProvider {
+      name: string
+      baseUrl: string
+      apiKey: string
+      model: string
+      supportsVision?: boolean
+    }
+    const customProviders = ref<CustomProvider[]>([])
+    /** 当前选用的供应商下标 */
+    const activeProviderIndex = ref(0)
+
+    // 兼容旧版持久化的单供应商/旧模型字段 → 迁移成供应商数组
+    try {
+      const prevRaw = localStorage.getItem('app')
+      if (prevRaw) {
+        const prev = JSON.parse(prevRaw)
+        if (Array.isArray(prev.customProviders)) {
+          customProviders.value = prev.customProviders
+        } else if (
+          prev.customBaseUrl ||
+          prev.customModel ||
+          (Array.isArray(prev.customModels) && prev.customModels.length)
+        ) {
+          const m = Array.isArray(prev.customModels) ? prev.customModels[0] : undefined
+          customProviders.value = [
+            {
+              name: prev.customName || '',
+              baseUrl: prev.customBaseUrl || '',
+              apiKey: prev.customApiKey || '',
+              model: m?.name || prev.customModel || '',
+              supportsVision: m?.supportsVision ?? prev.customSupportsVision ?? false,
+            },
+          ]
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
+    // 自愈：持久化状态可能因 schema 迭代残留坏下标/空数组，越界时归位
+    if (customProviders.value.length === 0) {
+      activeProviderIndex.value = 0
+    } else if (activeProviderIndex.value >= customProviders.value.length) {
+      activeProviderIndex.value = customProviders.value.length - 1
+    }
+
+    /** 当前生效的供应商配置 */
+    const activeProvider = computed(() => customProviders.value[activeProviderIndex.value])
+
+    /** 用户是否显式切回平台默认模型（保留供应商配置，只是不再使用） */
+    const usePlatform = ref(false)
+
+    /** 是否启用自定义供应商（未显式切平台、且当前供应商 baseUrl/apiKey 都填了才生效） */
+    const useCustomApi = computed(() => {
+      if (usePlatform.value) return false
+      const p = activeProvider.value
+      return !!p && !!(p.baseUrl && p.apiKey)
+    })
+
+    /** 实际请求使用的模型名 */
+    const effectiveModelId = computed<string>(() => {
+      if (!useCustomApi.value) return currentModelId.value
+      return (activeProvider.value?.model || '').trim() || (modelOptions[0]?.model ?? '')
+    })
+
+    /** 自定义模式下用于 token 预算的上下文窗口（未知则用平台默认） */
+    const activeContextWindow = computed(() =>
+      useCustomApi.value
+        ? (modelOptions[0]?.contextWindow ?? 128000)
+        : (currentModel.value?.contextWindow ?? 128000),
+    )
+
+    /** 自定义模式下是否把图片作为上下文发送 */
+    const activeSupportsVision = computed(() =>
+      useCustomApi.value
+        ? (activeProvider.value?.supportsVision ?? false)
+        : (currentModel.value?.supportsVision ?? false),
+    )
+
+    /** 构造 AI 请求体：自定义时附带 baseUrl/apiKey + model，平台模式与现状完全一致 */
+    function aiRequestParams<T extends object>(
+      extra: T,
+    ): T & { baseUrl?: string; apiKey?: string; model: string } {
+      const p = activeProvider.value
+      return {
+        ...(useCustomApi.value && p ? { baseUrl: p.baseUrl, apiKey: p.apiKey } : {}),
+        model: effectiveModelId.value,
+        ...extra,
+      }
+    }
+
+    /** 切换当前选用的供应商 */
+    function setActiveProvider(i: number): void {
+      if (i >= 0 && i < customProviders.value.length) activeProviderIndex.value = i
+    }
+
     return {
       sidebarCollapsed,
       sidebarOpen,
@@ -92,6 +190,16 @@ export const useAppStore = defineStore(
       currentModel,
       setCurrentModelId,
       modelOptions,
+      customProviders,
+      activeProviderIndex,
+      activeProvider,
+      setActiveProvider,
+      usePlatform,
+      useCustomApi,
+      effectiveModelId,
+      activeContextWindow,
+      activeSupportsVision,
+      aiRequestParams,
     }
   },
   {

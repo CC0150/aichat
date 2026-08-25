@@ -32,7 +32,14 @@ const RERANK_CANDIDATE_COUNT = 20
  */
 export async function* ragQuery(
   userQuery: string,
-  { userId, kbId, model = 'deepseek-v4-pro', topK = 5, rerank = true }: RagQueryOptions = {},
+  {
+    userId,
+    kbId,
+    model = 'deepseek-v4-pro',
+    topK = 5,
+    rerank = true,
+    client,
+  }: RagQueryOptions = {},
   signal?: AbortSignal,
 ): AsyncGenerator<string> {
   // Step 1: 把用户问题转成向量
@@ -71,5 +78,6 @@ ${context}
       { role: 'user', content: userQuery },
     ],
     signal,
+    client,
   )
 }

@@ -25,6 +25,17 @@ const props = defineProps({
 /** 事件：close - 关闭弹窗, confirm - 确认操作 */
 const emit = defineEmits(['close', 'confirm'])
 
+/** 滚动条仅滚动时短暂显示 */
+const isScrolling = ref(false)
+let _scrollTimer: ReturnType<typeof setTimeout> | null = null
+function onScroll() {
+  isScrolling.value = true
+  if (_scrollTimer) clearTimeout(_scrollTimer)
+  _scrollTimer = setTimeout(() => {
+    isScrolling.value = false
+  }, 600)
+}
+
 /** 触发关闭弹窗事件 */
 function handleClose() {
   emit('close')
@@ -53,13 +64,22 @@ function handleBackdropClick(e) {
         @click="handleBackdropClick"
       >
         <div
-          class="mx-4 w-full max-w-md rounded-2xl border border-border bg-surface-elevated p-5 shadow-xl sm:p-6"
+          class="mx-4 flex max-h-[85vh] w-full max-w-md flex-col rounded-2xl border border-border bg-surface-elevated p-5 shadow-xl sm:p-6"
         >
-          <h3 v-if="title" class="mb-4 text-base font-semibold tracking-tight text-text-primary">
+          <h3
+            v-if="title"
+            class="mb-4 shrink-0 text-base font-semibold tracking-tight text-text-primary"
+          >
             {{ title }}
           </h3>
-          <slot />
-          <div class="mt-5 flex justify-end gap-3">
+          <div
+            class="thin-scrollbar min-h-0 flex-1 overflow-y-auto"
+            :class="{ 'is-scrolling': isScrolling }"
+            @scroll="onScroll"
+          >
+            <slot />
+          </div>
+          <div class="mt-5 flex shrink-0 justify-end gap-3">
             <button
               type="button"
               class="rounded-lg px-4 py-2 text-[13px] font-medium text-text-secondary transition-all duration-200 hover:bg-surface-input hover:text-text-primary"
@@ -115,5 +135,14 @@ function handleBackdropClick(e) {
 .modal-leave-to > :not(style) {
   opacity: 0;
   transform: scale(0.98);
+}
+
+/* 滚动条仅滚动时显示（配合 thin-scrollbar 的透明默认样式） */
+.thin-scrollbar.is-scrolling::-webkit-scrollbar-thumb,
+.thin-scrollbar.is-scrolling:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-text-muted) 45%, transparent);
+}
+.thin-scrollbar.is-scrolling {
+  scrollbar-color: color-mix(in srgb, var(--color-text-muted) 45%, transparent) transparent;
 }
 </style>

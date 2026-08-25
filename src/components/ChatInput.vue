@@ -10,6 +10,7 @@ import { useKnowledgeStore } from '@/stores/knowledge'
 import { requestChatStream, autoResize as autoResizeTextarea, isAbortError } from '@/utils'
 import { buildMessagesWithContext, trimByTokenBudget } from '@/utils/messageBuilder'
 import { requestRagStream } from '@/utils/ragApi'
+import SettingsModal from './SettingsModal.vue'
 import { difficultyMap } from '@/utils/interviewHelpers'
 import { parseFiles } from '@/utils/fileApi'
 import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
@@ -36,6 +37,8 @@ let activeController = null
 const textareaRef = ref(null)
 /** 模型选择下拉菜单是否打开 */
 const isModelMenuOpen = ref(false)
+/** 模型设置弹窗是否显示 */
+const showSettings = ref(false)
 
 // KB 选择器
 /** 是否开启了知识库搜索模式 */
@@ -165,9 +168,17 @@ function clearImages() {
   if (imageInputRef.value) imageInputRef.value.value = ''
 }
 
-/** 切换当前使用的 AI 模型 */
+/** 切换当前使用的 AI 模型（平台默认模型，非破坏性） */
 function selectModel(id) {
   appStore.setCurrentModelId(id)
+  appStore.usePlatform = true
+  isModelMenuOpen.value = false
+}
+
+/** 切换当前使用的自定义供应商（退出平台模式） */
+function selectProvider(i) {
+  appStore.setActiveProvider(i)
+  appStore.usePlatform = false
   isModelMenuOpen.value = false
 }
 
@@ -391,7 +402,7 @@ function buildMessagesForContinue() {
       }
       return { role: m.role, content }
     })
-  return trimByTokenBudget(messages, appStore.currentModel?.contextWindow ?? 128000)
+  return trimByTokenBudget(messages, appStore.activeContextWindow)
 }
 
 /**
@@ -416,7 +427,7 @@ async function continueGeneration() {
     if (controller.signal.aborted) return
 
     const streamingChatId = chatStore.currentChatId
-    await requestChatStream(modelConfig.model, messages, {
+    await requestChatStream(messages, {
       onChunk: (chunk: string) => {
         // 确保流式响应仍然对应当前对话（防止用户快速切换对话导致的串数据）
         if (chatStore.currentChatId === streamingChatId) chatStore.appendToLastMessage(chunk)
@@ -511,13 +522,11 @@ async function sendMessage(content) {
   if (selectedKbId.value) {
     try {
       if (controller.signal.aborted) return
-      const modelConfig = appStore.currentModel
       const streamingChatId = chatStore.currentChatId
 
       await requestRagStream({
         query: text,
         kbId: selectedKbId.value,
-        model: modelConfig.model,
         onChunk: (chunk) => {
           if (chatStore.currentChatId === streamingChatId) chatStore.appendToLastMessage(chunk)
         },
@@ -556,17 +565,15 @@ async function sendMessage(content) {
       attachments: attachments.value,
       images: images.value,
       maxContextChars: MAX_CONTEXT_CHARS,
-      maxTokens: appStore.currentModel?.contextWindow ?? 128000,
-      supportsVision: appStore.currentModel?.supportsVision ?? false,
+      maxTokens: appStore.activeContextWindow,
+      supportsVision: appStore.activeSupportsVision,
     })
 
-    if (controller.signal.aborted) return
-    const modelConfig = appStore.currentModel
     if (controller.signal.aborted) return
 
     const streamingChatId = chatStore.currentChatId
     // SSE 流式请求：每个 data chunk 追加到当前 assistant 消息末尾
-    await requestChatStream(modelConfig.model, messages, {
+    await requestChatStream(messages, {
       onChunk: (chunk: string) => {
         if (chatStore.currentChatId === streamingChatId) chatStore.appendToLastMessage(chunk)
       },
@@ -780,7 +787,6 @@ defineExpose({ sendMessage, continueGeneration })
             @click="triggerFileSelect"
           >
             <Icon icon="lucide:link" class="h-[17px] w-[17px]" />
-            <span class="hidden sm:inline">添加附件</span>
           </button>
           <input
             ref="fileInputRef"
@@ -798,7 +804,6 @@ defineExpose({ sendMessage, continueGeneration })
             @click="triggerImageSelect"
           >
             <Icon icon="lucide:image" class="h-[17px] w-[17px]" />
-            <span class="hidden sm:inline">上传图片</span>
           </button>
           <input
             ref="imageInputRef"
@@ -821,7 +826,6 @@ defineExpose({ sendMessage, continueGeneration })
             @click="toggleRecording"
           >
             <Icon :icon="isRecording ? 'lucide:mic-off' : 'lucide:mic'" class="h-[17px] w-[17px]" />
-            <span class="hidden sm:inline">{{ isRecording ? '录音中...' : '语音' }}</span>
             <span v-if="isRecording" class="relative flex h-2 w-2 ml-0.5">
               <span
                 class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"
@@ -880,15 +884,23 @@ defineExpose({ sendMessage, continueGeneration })
             </transition>
           </div>
 
-          <!-- Model selector -->
+          <!-- 模型选择：平台默认模型 + 自定义供应商（合并下拉，切换均非破坏性） -->
           <div class="relative">
             <button
-              v-tooltip="`当前模型：${appStore.currentModel.label}`"
+              v-tooltip="
+                `当前模型：${appStore.useCustomApi ? appStore.effectiveModelId : appStore.currentModel.label}`
+              "
               type="button"
-              class="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-text-muted transition-all duration-200 hover:bg-surface-input hover:text-text-primary"
+              class="flex max-w-[200px] items-center gap-1 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-text-muted transition-all duration-200 hover:bg-surface-input hover:text-text-primary"
               @click="isModelMenuOpen = !isModelMenuOpen"
             >
-              <span>{{ appStore.currentModel.shortLabel }}</span>
+              <span class="truncate">
+                {{
+                  appStore.useCustomApi
+                    ? appStore.effectiveModelId
+                    : appStore.currentModel.shortLabel
+                }}
+              </span>
               <Icon
                 icon="lucide:chevron-down"
                 class="h-3.5 w-3.5 transition-transform duration-200"
@@ -898,8 +910,13 @@ defineExpose({ sendMessage, continueGeneration })
             <transition name="fade">
               <div
                 v-if="isModelMenuOpen"
-                class="absolute right-0 bottom-full z-20 mb-1.5 w-48 rounded-xl border border-border bg-surface-elevated p-1 shadow-lg"
+                class="absolute right-0 bottom-full z-20 mb-1.5 w-56 rounded-xl border border-border bg-surface-elevated p-1 shadow-lg"
               >
+                <p
+                  class="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-text-muted"
+                >
+                  平台模型
+                </p>
                 <button
                   v-for="m in appStore.modelOptions"
                   :key="m.id"
@@ -909,11 +926,41 @@ defineExpose({ sendMessage, continueGeneration })
                 >
                   <span class="truncate">{{ m.label }}</span>
                   <Icon
-                    v-if="m.id === appStore.currentModelId"
+                    v-if="!appStore.useCustomApi && m.id === appStore.currentModelId"
                     icon="lucide:check"
                     class="h-4 w-4 shrink-0 text-primary"
                   />
                 </button>
+
+                <template v-if="appStore.customProviders.length">
+                  <div class="my-1 h-px bg-border" />
+                  <p
+                    class="px-3 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wider text-text-muted"
+                  >
+                    自定义供应商
+                  </p>
+                  <button
+                    v-for="(p, i) in appStore.customProviders"
+                    :key="i"
+                    type="button"
+                    class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors duration-150 hover:bg-surface-input"
+                    @click="selectProvider(i)"
+                  >
+                    <div class="min-w-0 flex-1">
+                      <div class="truncate text-[13px] text-text-secondary">
+                        {{ p.name || '（未命名供应商）' }}
+                      </div>
+                      <div class="truncate text-[11px] text-text-muted">
+                        {{ p.model || '未填模型' }}
+                      </div>
+                    </div>
+                    <Icon
+                      v-if="appStore.useCustomApi && i === appStore.activeProviderIndex"
+                      icon="lucide:check"
+                      class="h-4 w-4 shrink-0 text-primary"
+                    />
+                  </button>
+                </template>
               </div>
             </transition>
           </div>
@@ -934,7 +981,6 @@ defineExpose({ sendMessage, continueGeneration })
               @click="isKBMenuOpen = !isKBMenuOpen"
             >
               <Icon icon="lucide:database" class="h-[17px] w-[17px]" />
-              <span class="hidden sm:inline">{{ isKBMode ? selectedKbLabel : '知识库' }}</span>
             </button>
             <transition name="fade">
               <div
@@ -978,6 +1024,18 @@ defineExpose({ sendMessage, continueGeneration })
             </transition>
           </div>
 
+          <!-- 模型设置 -->
+          <button
+            v-tooltip="'模型设置'"
+            type="button"
+            class="flex h-9 w-9 items-center justify-center rounded-xl text-text-muted transition-all duration-200 hover:bg-surface-input hover:text-text-primary"
+            :class="{ 'text-primary': appStore.useCustomApi }"
+            :aria-label="'模型设置'"
+            @click="showSettings = true"
+          >
+            <Icon icon="lucide:settings" class="h-[18px] w-[18px]" />
+          </button>
+
           <!-- Send / Stop -->
           <button
             v-tooltip="isBusy ? '停止生成' : '发送（Enter 发送，Shift+Enter 换行）'"
@@ -1000,5 +1058,6 @@ defineExpose({ sendMessage, continueGeneration })
         </div>
       </div>
     </div>
+    <SettingsModal v-model:show="showSettings" />
   </div>
 </template>

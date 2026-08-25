@@ -165,12 +165,20 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       questionCount = 5,
       difficulty = 'all',
       model,
-    }: { questionCount?: number; difficulty?: string; model?: string },
+      baseUrl,
+      apiKey,
+    }: {
+      questionCount?: number
+      difficulty?: string
+      model?: string
+      baseUrl?: string
+      apiKey?: string
+    } = {},
   ): Promise<any> {
     loading.value = true
     error.value = ''
     try {
-      return await generateFromKB(kbId, { questionCount, difficulty, model })
+      return await generateFromKB(kbId, { questionCount, difficulty, model, baseUrl, apiKey })
     } catch (err: any) {
       error.value = err.message || '生成题目失败'
       throw err

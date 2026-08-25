@@ -3,6 +3,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import { db } from '../db'
 import { DEFAULT_MODEL } from '../config'
+import { byokFromBody } from '../utils/byok'
 import { callAI } from '../services/aiCompletions'
 import { handleAIError } from '../services/errorHandler'
 import { DIFFICULTY_MAP } from '../utils/constants'
@@ -412,7 +413,8 @@ router.post('/:id/generate', async (req: Request, res: Response) => {
     ['all', 'easy', 'medium', 'hard'] as const,
     'all',
   )
-  const model = sanitizeString(req.body?.model, { required: false }) || DEFAULT_MODEL
+  const { client, model: rawModel } = byokFromBody(req.body)
+  const model = rawModel || DEFAULT_MODEL
 
   try {
     const meta = await getOwnedMeta(req.userId as number, id)
@@ -450,6 +452,7 @@ router.post('/:id/generate', async (req: Request, res: Response) => {
       temperature: 0.5,
       maxTokens: 4000,
       logTag: 'knowledge/generate',
+      client,
     })
 
     if (!Array.isArray(questions) || questions.length === 0) {
@@ -487,7 +490,8 @@ router.post('/:id/agent-generate', async (req: Request, res: Response) => {
     ['all', 'easy', 'medium', 'hard'] as const,
     'all',
   )
-  const model = sanitizeString(req.body?.model, { required: false }) || DEFAULT_MODEL
+  const { client, model: rawModel } = byokFromBody(req.body)
+  const model = rawModel || DEFAULT_MODEL
 
   try {
     const meta = await getOwnedMeta(req.userId as number, id)
@@ -501,6 +505,7 @@ router.post('/:id/agent-generate', async (req: Request, res: Response) => {
       count,
       difficulty: difficulty ?? 'all',
       model,
+      client,
     })
     res.json(result)
   } catch (err) {
